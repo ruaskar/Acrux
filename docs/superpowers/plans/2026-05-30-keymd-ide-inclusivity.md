@@ -20,6 +20,11 @@ verified per-tool wiring guide + a `keymd ide` helper that prints exact settings
   (shorthand accepted) or `{"type":"message","role",...}`.
 - **Model tool call (in response `output[]`):**
   `{"type":"function_call","id":"fc_…","call_id":"call_…","name":…,"arguments":"<json str>"}`.
+- **Reasoning item (reasoning models, e.g. gpt-5-codex):** a `{"type":"reasoning","id":"rs_…",…}`
+  item appears in `output[]` IMMEDIATELY BEFORE each `function_call`. When replaying the
+  function_call inline as input (no `previous_response_id`), the reasoning item MUST be kept
+  adjacent or the API 400s ("function_call … provided without its required 'reasoning' item").
+  `append_assistant` therefore re-appends `reasoning` items alongside `function_call` items.
 - **Tool result (appended to `input`):**
   `{"type":"function_call_output","call_id":"call_…","output":"<str>"}` — correlated by `call_id`.
 - **Text answer (in `output[]`):**

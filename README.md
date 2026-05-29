@@ -88,7 +88,7 @@ Setup:
 ```bash
 keymd build                                            # index your repo (gate files > --threshold loc)
 export KEYMD_OPENAI_BASE=http://your-llm:8000          # or KEYMD_UPSTREAM_BASE for an Anthropic endpoint
-keymd serve --port 8787 --threshold 400                # set env BEFORE serve (read at import)
+keymd serve --port 8787 --threshold 400                # serve reads env per request (or use `keymd up --upstream …`)
 # in your framework: base_url → http://localhost:8787, keep your own API key
 ```
 

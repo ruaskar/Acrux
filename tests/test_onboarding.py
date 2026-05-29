@@ -156,3 +156,22 @@ def test_ide_all_lists_frameworks(capsys):
 def test_ide_unknown_tool(capsys):
     assert ob.ide("nope-xyz") == 1
     assert "unknown tool" in capsys.readouterr().out.lower()
+
+
+def test_ide_roo_and_aider_present(capsys):
+    # README names both; the helper must have entries (else `keymd ide roo` errors)
+    assert ob.ide("roo") == 0
+    assert ob.ide("aider") == 0
+
+
+def test_announce_upstream_surfaces_wire_binding(capsys):
+    ob._announce_upstream(ob.Resolved(host="127.0.0.1", port=8787, threshold=400,
+                                      wire="openai", upstream="http://gw"))
+    out = capsys.readouterr().out
+    assert "openai wire" in out and "http://gw" in out and "--wire anthropic" in out
+
+
+def test_announce_upstream_silent_without_override(capsys):
+    ob._announce_upstream(ob.Resolved(host="h", port=1, threshold=1,
+                                      wire="openai", upstream=None))
+    assert capsys.readouterr().out == ""

@@ -48,8 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--host")
         parser.add_argument("--port", type=int)
         parser.add_argument("--threshold", type=int)
-        parser.add_argument("--wire", choices=["openai", "anthropic"])
-        parser.add_argument("--upstream")
+        parser.add_argument("--wire", choices=["openai", "anthropic"],
+                            help="which wire --upstream binds to (default openai)")
+        parser.add_argument("--upstream",
+                            help="upstream base URL for the selected --wire "
+                                 "(Anthropic gateway → also pass --wire anthropic)")
         parser.add_argument("--rebuild", action="store_true")
     up = sp.add_parser("up"); _serve_flags(up)
     rn = sp.add_parser("run"); _serve_flags(rn)
