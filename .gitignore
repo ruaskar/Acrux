@@ -1,5 +1,8 @@
-.aotc/
+.keymd/
 __pycache__/
 *.pyc
+*.egg-info/
 .env
 *.db
+*.db-wal
+*.db-shm
