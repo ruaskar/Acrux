@@ -1,0 +1,133 @@
+"""onboarding.py — the regular-user commands: up, run, init, doctor.
+
+One-liner UX: `keymd run -- <agent>` (build+serve+inject base-url env+exec the
+agent) and `keymd up` (zero-config build+serve+wiring hint). Resolution
+precedence per setting: flag > env > keymd.toml > default. No secrets here — API
+keys ride on the caller's request headers, which the proxy forwards untouched.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from keymd.engine import config, index, settings
+
+
+@dataclass
+class Resolved:
+    host: str
+    port: int
+    threshold: int
+    wire: str
+    upstream: str | None
+
+
+def _env_int(name: str) -> int | None:
+    v = os.environ.get(name)
+    return int(v) if v and v.isdigit() else None
+
+
+def resolve(*, root: Path | None = None, flag_host=None, flag_port=None,
+            flag_threshold=None, flag_wire=None, flag_upstream=None) -> Resolved:
+    s = settings.load(root)
+    return Resolved(
+        host=flag_host or os.environ.get("KEYMD_HOST") or s.host,
+        port=flag_port or _env_int("KEYMD_PORT") or s.port,
+        threshold=flag_threshold if flag_threshold is not None else s.threshold,
+        wire=flag_wire or os.environ.get("KEYMD_WIRE") or s.wire,
+        upstream=flag_upstream or os.environ.get("KEYMD_UPSTREAM") or s.upstream,
+    )
+
+
+def _base(host: str, port: int) -> str:
+    return f"http://{host}:{port}"
+
+
+def child_env(parent: dict, host: str, port: int) -> dict:
+    """Parent env + injected base-URLs so an env-respecting agent is auto-wired.
+    Set all three (the single proxy serves both wire formats) — harmless extras."""
+    b = _base(host, port)
+    env = dict(parent)
+    env["ANTHROPIC_BASE_URL"] = b
+    env["OPENAI_BASE_URL"] = f"{b}/v1"
+    env["OPENAI_API_BASE"] = f"{b}/v1"
+    return env
+
+
+def wiring_hint(host: str, port: int) -> str:
+    b = _base(host, port)
+    return ("Point your agent at keymd (one of):\n"
+            f"  export ANTHROPIC_BASE_URL={b}\n"
+            f"  export OPENAI_BASE_URL={b}/v1")
+
+
+def _ensure_index(rebuild: bool) -> None:
+    if rebuild or not config.index_path().exists():
+        index.build(verbose=False)
+
+
+def _serve_kwargs(r: Resolved) -> dict:
+    ob = r.upstream if r.wire == "openai" else None
+    ab = r.upstream if r.wire == "anthropic" else None
+    return {"host": r.host, "port": r.port, "threshold": r.threshold,
+            "upstream": ab, "openai_base": ob}
+
+
+def up(*, root=None, rebuild=False, flag_host=None, flag_port=None,
+       flag_threshold=None, flag_wire=None, flag_upstream=None) -> int:
+    r = resolve(root=root, flag_host=flag_host, flag_port=flag_port,
+                flag_threshold=flag_threshold, flag_wire=flag_wire,
+                flag_upstream=flag_upstream)
+    _ensure_index(rebuild)
+    print(f"keymd proxy on {_base(r.host, r.port)} (threshold={r.threshold} loc)")
+    print(wiring_hint(r.host, r.port))
+    from keymd.proxy import server
+    server.serve(**_serve_kwargs(r))
+    return 0
+
+
+def _start_proxy(r: Resolved):
+    """Start the proxy in a background daemon thread; return the uvicorn Server."""
+    import uvicorn
+    from keymd.proxy import server
+    app = server.build_app(threshold=r.threshold, **{
+        "upstream": r.upstream if r.wire == "anthropic" else None,
+        "openai_base": r.upstream if r.wire == "openai" else None})
+    cfg = uvicorn.Config(app, host=r.host, port=r.port, log_level="warning")
+    srv = uvicorn.Server(cfg)
+    srv.install_signal_handlers = lambda: None  # not the main thread
+    threading.Thread(target=srv.run, daemon=True).start()
+    for _ in range(200):
+        if srv.started:
+            return srv
+        time.sleep(0.05)
+    raise RuntimeError(f"keymd proxy failed to start on :{r.port}")
+
+
+def run_agent(cmd: list[str], *, root=None, rebuild=False, flag_host=None,
+              flag_port=None, flag_threshold=None, flag_wire=None,
+              flag_upstream=None) -> int:
+    if not cmd:
+        raise SystemExit("keymd run: missing command after `--` "
+                         "(e.g. `keymd run -- claude`)")
+    r = resolve(root=root, flag_host=flag_host, flag_port=flag_port,
+                flag_threshold=flag_threshold, flag_wire=flag_wire,
+                flag_upstream=flag_upstream)
+    _ensure_index(rebuild)
+    srv = _start_proxy(r)
+    print(f"keymd proxy on {_base(r.host, r.port)} → launching: {' '.join(cmd)}")
+    env = child_env(os.environ, r.host, r.port)
+    try:
+        proc = subprocess.run(cmd, env=env)
+        return proc.returncode
+    except FileNotFoundError:
+        print(f"keymd run: command not found: {cmd[0]}")
+        return 127
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        srv.should_exit = True
