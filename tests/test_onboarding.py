@@ -81,3 +81,36 @@ def test_run_command_not_found(tmp_path, monkeypatch):
     monkeypatch.setattr(ob.subprocess, "run", boom)
     rc = ob.run_agent(["nope-xyz"], root=tmp_path)
     assert rc == 127
+
+
+# --- Task 6: init ----------------------------------------------------------
+
+def _isolate(tmp_path, monkeypatch):
+    """Point the engine at tmp_path so init's index.build never touches the real repo."""
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / ".keymd" / "index.db"))
+    from keymd.engine import config as c
+    c.project_pkg_prefixes.cache_clear()
+    c._git_toplevel.cache_clear()
+
+
+def test_init_writes_toml_and_is_idempotent(tmp_path, monkeypatch, capsys):
+    _isolate(tmp_path, monkeypatch)
+    (tmp_path / "m.py").write_text("y = 2\n", encoding="utf-8")
+    assert ob.init(path=str(tmp_path)) == 0
+    cfg = tmp_path / "keymd.toml"
+    assert cfg.exists() and "[keymd.serve]" in cfg.read_text(encoding="utf-8")
+    before = cfg.read_text(encoding="utf-8")
+    capsys.readouterr()
+    ob.init(path=str(tmp_path))                       # no clobber
+    assert cfg.read_text(encoding="utf-8") == before
+    assert "already" in capsys.readouterr().out.lower()
+
+
+def test_init_write_agents_appends_once(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    ob.init(path=str(tmp_path), write_agents=True)
+    agents = tmp_path / "AGENTS.md"
+    assert agents.exists() and "keymd steering snippet" in agents.read_text(encoding="utf-8")
+    ob.init(path=str(tmp_path), force=True, write_agents=True)   # not duplicated
+    assert agents.read_text(encoding="utf-8").count("keymd steering snippet") == 1
