@@ -114,3 +114,24 @@ def test_init_write_agents_appends_once(tmp_path, monkeypatch):
     assert agents.exists() and "keymd steering snippet" in agents.read_text(encoding="utf-8")
     ob.init(path=str(tmp_path), force=True, write_agents=True)   # not duplicated
     assert agents.read_text(encoding="utf-8").count("keymd steering snippet") == 1
+
+
+# --- Task 7: doctor --------------------------------------------------------
+
+def test_doctor_hard_fails_without_index(tmp_path, monkeypatch, capsys):
+    _isolate(tmp_path, monkeypatch)
+    (tmp_path / "z.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    rc = ob.doctor()                                  # index not built yet
+    out = capsys.readouterr().out
+    assert "index" in out.lower()
+    assert rc != 0
+
+
+def test_doctor_passes_after_build(tmp_path, monkeypatch, capsys):
+    _isolate(tmp_path, monkeypatch)
+    (tmp_path / "z.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    from keymd.engine import index
+    index.build(verbose=False)
+    rc = ob.doctor()
+    assert rc == 0
+    assert "✓" in capsys.readouterr().out

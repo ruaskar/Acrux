@@ -183,3 +183,59 @@ def init(*, path=None, force=False, write_agents=False) -> int:
         print(_AGENTS_SNIPPET)
     print("\nNext: `keymd run -- <your agent>`  or  `keymd up`")
     return 0
+
+
+def _check(label: str, ok: bool, hint: str = "") -> bool:
+    mark = "✓" if ok else "✗"
+    print(f"  {mark} {label}" + (f"  → {hint}" if (not ok and hint) else ""))
+    return ok
+
+
+def doctor(*, wire: bool = False, net: bool = False) -> int:
+    import importlib.util as iu
+    import shutil
+
+    from keymd.engine import query
+
+    hard_ok = True
+    print("keymd doctor:")
+    # 1 — index built (hard). stats() raises SystemExit when the DB is absent
+    # (a BaseException, so it must be named explicitly alongside Exception).
+    try:
+        files = query.stats().get("files", 0)
+    except (Exception, SystemExit):
+        files = 0
+    hard_ok &= _check(f"index built ({files} files)", files > 0,
+                      "run `keymd build` (or `keymd up`)")
+    # 2 — config parseable (hard; absent is OK)
+    try:
+        settings.load(); cfg_ok, cfg_hint = True, ""
+    except ValueError as e:
+        cfg_ok, cfg_hint = False, str(e)
+    hard_ok &= _check("keymd.toml parseable (or absent)", cfg_ok, cfg_hint)
+    # 3 — entry point on PATH (soft)
+    _check("keymd on PATH", shutil.which("keymd") is not None,
+           "use `python -m keymd ...` instead")
+    # 4 — proxy extras (hard)
+    extras = all(iu.find_spec(m) for m in ("httpx", "starlette", "uvicorn"))
+    hard_ok &= _check("proxy extras installed", extras,
+                      "pip install 'keymd[proxy]'")
+    # 5 — gate + SSE self-check (opt-in, hard if requested)
+    if wire and extras:
+        try:
+            from keymd.proxy import selfcheck
+            res = selfcheck.run_inprocess()
+            hard_ok &= _check("gate + SSE self-check", res["ok"], res.get("detail", ""))
+        except Exception as e:  # pragma: no cover - defensive
+            hard_ok &= _check("gate + SSE self-check", False, str(e))
+    # 6 — upstream reachability (opt-in, warn-only)
+    if net:
+        import socket
+        r = resolve()
+        host = (r.upstream or "https://api.openai.com").split("//")[-1].split("/")[0]
+        try:
+            socket.create_connection((host, 443), timeout=3).close(); reach = True
+        except OSError:
+            reach = False
+        _check(f"upstream reachable ({host})", reach, "check network / upstream URL")
+    return 0 if hard_ok else 1
