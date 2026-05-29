@@ -34,16 +34,37 @@ _DEFAULT_ANTHROPIC = "https://api.anthropic.com"
 _DEFAULT_OPENAI = "https://api.openai.com"
 
 
-async def _post(url: str, body: dict, headers: dict) -> dict:
-    """POST a NON-streamed request upstream with the caller's auth headers.
-    IPv4-pinned transport (proxies returning AAAA hang Python SDKs on a dead
-    IPv6 route)."""
+class UpstreamError(Exception):
+    """A non-2xx from the upstream LLM API. Carries the status + parsed body so a
+    route surfaces it to the host, instead of the gate loop misreading an
+    error-shaped dict (no `output`/`choices`/`content`) as the model's final answer."""
+
+    def __init__(self, status: int, body):
+        super().__init__(f"upstream returned {status}")
+        self.status = status
+        self.body = body
+
+
+async def _post(url: str, body: dict, headers: dict, *,
+                force_nonstream: bool = True) -> dict:
+    """POST upstream with the caller's auth headers. IPv4-pinned transport (proxies
+    returning AAAA hang Python SDKs on a dead IPv6 route).
+
+    force_nonstream sets stream:false (the gate must read whole responses); pass
+    False for verbatim-passthrough routes that have no stream param (count_tokens).
+    Raises UpstreamError on a non-2xx so the caller can propagate the real status."""
     fwd = {k: v for k, v in headers.items() if k.lower() in _FORWARD_HEADERS}
-    payload = {**body, "stream": False}  # internal calls are always non-streamed
+    payload = {**body, "stream": False} if force_nonstream else body
     transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
     async with httpx.AsyncClient(transport=transport, timeout=600.0) as client:
         r = await client.post(url, json=payload, headers=fwd)
-        return r.json()
+        try:
+            data = r.json()
+        except ValueError:
+            data = {"error": {"message": r.text[:2000], "type": "upstream_non_json"}}
+        if r.is_error:
+            raise UpstreamError(r.status_code, data)
+        return data
 
 
 def _anthropic_base(override: str | None) -> str:
@@ -67,7 +88,9 @@ async def forward_openai(body: dict, headers: dict, base: str | None = None) -> 
 async def forward_count_tokens(body: dict, headers: dict, base: str | None = None) -> dict:
     # Claude Code calls this for context management; pure passthrough (no file
     # reads to gate), so a proper Anthropic gateway must expose it or CC 404s.
-    return await _post(f"{_anthropic_base(base)}/v1/messages/count_tokens", body, headers)
+    # force_nonstream=False: count_tokens has no `stream` param — don't inject one.
+    return await _post(f"{_anthropic_base(base)}/v1/messages/count_tokens", body, headers,
+                       force_nonstream=False)
 
 
 async def forward_responses(body: dict, headers: dict, base: str | None = None) -> dict:
@@ -152,6 +175,14 @@ def _responses_sse(resp: dict):
     base_resp = {k: v for k, v in resp.items() if k != "output"}
     base_resp.setdefault("id", "resp_keymd")
     base_resp.setdefault("object", "response")
+    # Fields the SDK's Response model marks required — set so a STRICT consumer
+    # (model_validate, not the SDK's lenient stream path) accepts the synthesized
+    # response object. Harmless to lenient consumers.
+    base_resp.setdefault("created_at", resp.get("created", 0))
+    base_resp.setdefault("model", resp.get("model", ""))
+    base_resp.setdefault("tools", [])
+    base_resp.setdefault("tool_choice", "auto")
+    base_resp.setdefault("parallel_tool_calls", True)
     in_progress = {**base_resp, "status": "in_progress", "output": []}
     yield ev("response.created", {"response": in_progress})
     yield ev("response.in_progress", {"response": in_progress})
@@ -166,16 +197,16 @@ def _responses_sse(resp: dict):
                            if p.get("type") == "output_text")
             yield ev("response.content_part.added",
                      {"item_id": iid, "output_index": idx, "content_index": 0,
-                      "part": {"type": "output_text", "text": ""}})
+                      "part": {"type": "output_text", "text": "", "annotations": []}})
             yield ev("response.output_text.delta",
                      {"item_id": iid, "output_index": idx, "content_index": 0,
-                      "delta": text})
+                      "delta": text, "logprobs": []})
             yield ev("response.output_text.done",
                      {"item_id": iid, "output_index": idx, "content_index": 0,
-                      "text": text})
+                      "text": text, "logprobs": []})
             yield ev("response.content_part.done",
                      {"item_id": iid, "output_index": idx, "content_index": 0,
-                      "part": {"type": "output_text", "text": text}})
+                      "part": {"type": "output_text", "text": text, "annotations": []}})
             yield ev("response.output_item.done", {"output_index": idx, "item": item})
         elif itype == "function_call":
             args = item.get("arguments", "") or ""
@@ -192,6 +223,11 @@ def _responses_sse(resp: dict):
                            "output": resp.get("output", [])}})
 
 
+def _upstream_error_response(e: "UpstreamError") -> JSONResponse:
+    body = e.body if isinstance(e.body, dict) else {"error": {"message": str(e.body)}}
+    return JSONResponse(body, status_code=e.status)
+
+
 def build_app(threshold: int = 400, *, upstream: str | None = None,
               openai_base: str | None = None) -> Starlette:
     async def anthropic_route(request: Request):
@@ -204,7 +240,10 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
             return (await forward_upstream(b, hdrs) if upstream is None
                     else await forward_upstream(b, hdrs, upstream))
 
-        result = await complete(body, AnthropicAdapter(), up, threshold=threshold)
+        try:
+            result = await complete(body, AnthropicAdapter(), up, threshold=threshold)
+        except UpstreamError as e:
+            return _upstream_error_response(e)
         if wants_stream:
             return StreamingResponse(_anthropic_sse(result),
                                      media_type="text/event-stream")
@@ -219,7 +258,10 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
             return (await forward_openai(b, hdrs) if openai_base is None
                     else await forward_openai(b, hdrs, openai_base))
 
-        result = await complete(body, OpenAIAdapter(), up, threshold=threshold)
+        try:
+            result = await complete(body, OpenAIAdapter(), up, threshold=threshold)
+        except UpstreamError as e:
+            return _upstream_error_response(e)
         if wants_stream:
             return StreamingResponse(_openai_sse(result),
                                      media_type="text/event-stream")
@@ -229,8 +271,11 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
         # Passthrough — no gate loop (nothing to intercept in a token count).
         body = await request.json()
         hdrs = dict(request.headers)
-        result = (await forward_count_tokens(body, hdrs) if upstream is None
-                  else await forward_count_tokens(body, hdrs, upstream))
+        try:
+            result = (await forward_count_tokens(body, hdrs) if upstream is None
+                      else await forward_count_tokens(body, hdrs, upstream))
+        except UpstreamError as e:
+            return _upstream_error_response(e)
         return JSONResponse(result)
 
     async def responses_route(request: Request):
@@ -242,7 +287,10 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
             return (await forward_responses(b, hdrs) if openai_base is None
                     else await forward_responses(b, hdrs, openai_base))
 
-        result = await complete(body, ResponsesAdapter(), up, threshold=threshold)
+        try:
+            result = await complete(body, ResponsesAdapter(), up, threshold=threshold)
+        except UpstreamError as e:
+            return _upstream_error_response(e)
         if wants_stream:
             return StreamingResponse(_responses_sse(result),
                                      media_type="text/event-stream")

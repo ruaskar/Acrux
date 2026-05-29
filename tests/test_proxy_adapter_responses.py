@@ -55,6 +55,21 @@ def test_append_roundtrip_uses_call_id():
     assert fco["call_id"] == "call1" and fco["output"] == "RESULT"
 
 
+def test_append_assistant_preserves_reasoning_before_function_call():
+    # Reasoning models (gpt-5-codex) emit a `reasoning` item right before the
+    # function_call; the API 400s if the function_call is replayed without it.
+    a = ResponsesAdapter()
+    body = {"input": [{"role": "user", "content": "go"}]}
+    resp = {"output": [
+        {"type": "reasoning", "id": "rs1", "summary": []},
+        {"type": "function_call", "id": "fc1", "call_id": "call1",
+         "name": "Read", "arguments": "{}"}]}
+    a.append_assistant(body, resp)
+    appended = body["input"][1:]
+    assert [it["type"] for it in appended] == ["reasoning", "function_call"]
+    assert appended[0]["id"] == "rs1"      # reasoning kept, adjacency preserved
+
+
 def test_terminal_shape():
     a = ResponsesAdapter()
     t = a.terminal("done", {"id": "r1", "model": "gpt"})

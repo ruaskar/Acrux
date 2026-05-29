@@ -77,6 +77,16 @@ def _serve_kwargs(r: Resolved) -> dict:
             "upstream": ab, "openai_base": ob}
 
 
+def _announce_upstream(r: Resolved) -> None:
+    # --upstream binds to ONE wire (the resolved --wire, default openai). Surface
+    # it so a Claude Code (Anthropic-wire) user who forgot --wire anthropic sees
+    # the binding instead of silently routing to the public Anthropic API.
+    if r.upstream:
+        print(f"upstream override → {r.wire} wire: {r.upstream}  "
+              f"(pass --wire {'anthropic' if r.wire == 'openai' else 'openai'} "
+              "to bind the other wire)")
+
+
 def up(*, root=None, rebuild=False, flag_host=None, flag_port=None,
        flag_threshold=None, flag_wire=None, flag_upstream=None) -> int:
     r = resolve(root=root, flag_host=flag_host, flag_port=flag_port,
@@ -84,6 +94,7 @@ def up(*, root=None, rebuild=False, flag_host=None, flag_port=None,
                 flag_upstream=flag_upstream)
     _ensure_index(rebuild)
     print(f"keymd proxy on {_base(r.host, r.port)} (threshold={r.threshold} loc)")
+    _announce_upstream(r)
     print(wiring_hint(r.host, r.port))
     from keymd.proxy import server
     server.serve(**_serve_kwargs(r))
@@ -119,6 +130,7 @@ def run_agent(cmd: list[str], *, root=None, rebuild=False, flag_host=None,
                 flag_upstream=flag_upstream)
     _ensure_index(rebuild)
     srv = _start_proxy(r)
+    _announce_upstream(r)
     print(f"keymd proxy on {_base(r.host, r.port)} → launching: {' '.join(cmd)}")
     env = child_env(os.environ, r.host, r.port)
     try:
@@ -258,6 +270,10 @@ def _ide_entries(host: str, port: int) -> dict:
             f"config.yaml → provider: openai, apiBase: {b}/v1"),
         "cursor": ("OpenAI wire",
             f"Settings → Override OpenAI Base URL = {b}/v1"),
+        "roo": ("OpenAI wire",
+            f"Settings → API Provider 'OpenAI Compatible' → Base URL = {b}/v1 (same as Cursor)"),
+        "aider": ("OpenAI wire",
+            f"export OPENAI_API_BASE={b}/v1  (or OPENAI_BASE_URL; or set in .aider.conf.yml)"),
         "openclaw": ("OpenAI wire",
             f"models.providers.<id>.baseUrl = {b}/v1  (OpenAI-Chat default)"),
         "hermes": ("OpenAI or Anthropic wire",

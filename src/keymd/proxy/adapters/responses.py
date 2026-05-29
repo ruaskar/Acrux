@@ -57,8 +57,14 @@ class ResponsesAdapter:
         return body.get("input", []) or []
 
     def append_assistant(self, body: dict, resp: dict) -> dict:
+        # Keep `reasoning` items too, in their original order: reasoning models
+        # (gpt-5-codex — Codex's default) emit a `reasoning` item (rs_…) immediately
+        # before each `function_call`, and the API 400s if a function_call is replayed
+        # as input without its adjacent reasoning item. all-or-forward means the whole
+        # turn is resolved locally here, so keeping all reasoning+function_call items
+        # preserves the reasoning→function_call→function_call_output chain.
         items = [it for it in (resp.get("output") or [])
-                 if it.get("type") == "function_call"]
+                 if it.get("type") in ("reasoning", "function_call")]
         body.setdefault("input", []).extend(items)
         return body
 
