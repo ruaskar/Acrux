@@ -2104,10 +2104,268 @@ Net: Phase 1 is verified green (26 plan tests + the new leaf-fallback test = 27)
 
 ---
 
-## Phases 2–5 — outline (detailed in this same document after the Phase 1 review checkpoint)
+# Phase 1b — JS/TS parsers
 
-- **Phase 1b — JS/TS parsers:** `parsers/javascript.py` + `parsers/typescript.py` behind the Task-5 `Parser` interface, using `tree-sitter` + `tree-sitter-language-pack`. **Pinned API (verified May 2026):** `from tree_sitter_language_pack import get_parser`; parse `bytes`; queries use `tree_sitter.Query(language, src)` + `QueryCursor(query).captures(root)` returning `{capture_name: [nodes]}` (the `Query.captures()` method was removed at 0.25.x). Add per-language collision sets analogous to `STDLIB_STEMS`. Pin `tree-sitter>=0.25,<0.26`.
-- **Plan 2 — FS watcher:** debounced watcher (`watchdog`) that calls `sync_one` on source writes and re-indexes changed `.key.md` into FTS; daemonizable.
-- **Plan 3 — Enforcing proxy:** asyncio reverse-proxy (Anthropic + OpenAI wire formats, SSE), virtual `keymd_*` tools answered from this engine's `query` API, pre-read gate with `:full` escalation, deterministic rewrite for prompt-cache safety, output-cap. The hard core.
-- **Plan 4 — Host integration + A/B benchmark:** per-host setup (Claude Code `ANTHROPIC_BASE_URL`, Codex, Cline), `AGENTS.md` snippet, and the paired-subagent token benchmark on a public repo.
-- **Later (v1.1):** portable guardrails module; `/handoff` session-compaction.
+> **Fidelity caveat:** the tree-sitter grammar node-type names and query syntax below are best-effort and were NOT executed against the installed grammar. Task 1b.1 pins the live API/grammar with a smoke test; the per-language tests (1b.2/1b.3) are the source of truth — expect to adjust node-type names (`function_declaration`, `method_definition`, etc.) to match the installed `tree-sitter-language-pack` version. Pinned API (researched May 2026): `from tree_sitter_language_pack import get_parser`; parse **bytes**; run queries via `tree_sitter.Query(language, query_src)` + `QueryCursor(query).captures(root)` returning `{capture_name: [Node,...]}` (the old `Query.captures()` was removed at 0.25.x). Pin `tree-sitter>=0.25,<0.26` and a recent `tree-sitter-language-pack`.
+
+**Goal:** add `.js/.jsx/.mjs/.cjs` and `.ts/.tsx` parsers behind the Task-5 `Parser` interface so the engine, renderer, graph, and queries (all language-neutral) work on JS/TS repos with zero downstream change.
+
+### Task 1b.1: Dependencies + grammar/API smoke test
+**Files:** Modify `pyproject.toml` (add `tree-sitter>=0.25,<0.26`, `tree-sitter-language-pack`); Create `tests/test_treesitter_smoke.py`.
+- [ ] Step 1 — failing test: assert `get_parser("javascript").parse(b"function f(){}")` yields a root node, and that `Query`+`QueryCursor` import and a trivial `(function_declaration name:(identifier)@n)` query returns a capture dict containing `"n"`. This pins the exact API shape before any parser code.
+- [ ] Step 2 — run, expect FAIL (deps not installed / import error).
+- [ ] Step 3 — `python -m pip install -e ".[dev]"` after adding deps; if the capture API differs from the assumed `QueryCursor(query).captures(root)` dict shape, record the real shape in a module-level `# API:` comment that 1b.2/1b.3 import-match.
+- [ ] Step 4 — run, expect PASS. **This task's output (the confirmed capture API) is the contract 1b.2 and 1b.3 build against.**
+- [ ] Step 5 — commit.
+
+### Task 1b.2: JavaScript parser
+**Files:** Create `src/keymd/engine/parsers/javascript.py`; Create `tests/test_parser_js.py`.
+- [ ] Step 1 — failing test against an inline JS sample (a `function run()` that calls an imported `parseHeader`, plus a `class Parser { parse(){} }`): assert symbols `{run, Parser, Parser.parse}` with kinds, the `import` edge to the module, and `call` edges (full + leaf for member-expression calls, mirroring the Python leaf-duplication contract).
+- [ ] Step 2 — run, expect FAIL (module missing).
+- [ ] Step 3 — implement `JavaScriptParser` (`extensions=(".js",".jsx",".mjs",".cjs")`): `get_parser("javascript")`, parse `path.read_bytes()`, walk with a recursive descent that tracks a class/function nesting stack (same `<module>`/qualified-name logic as the Python `_Analyzer`), emitting `Symbol`/`Edge`. Signatures from the node's parameter text. Handle `function_declaration`, `lexical_declaration`→`arrow_function`, `class_declaration`+`method_definition`, `call_expression` (identifier + member_expression, emit leaf), `import_statement`. `register(JavaScriptParser())`.
+- [ ] Step 4 — run, expect PASS (adjust node-type names to the installed grammar until green).
+- [ ] Step 5 — commit.
+
+### Task 1b.3: TypeScript parser
+**Files:** Create `src/keymd/engine/parsers/typescript.py`; Create `tests/test_parser_ts.py`.
+- [ ] Step 1 — failing test: TS sample with type annotations + `interface`/`class`; assert symbols/signatures (signatures include the annotation text) and edges; assert `.tsx` routes to the `tsx` grammar.
+- [ ] Step 2 — run, expect FAIL.
+- [ ] Step 3 — implement `TypeScriptParser` (`extensions=(".ts",".tsx")`) reusing the JS walker (subclass or shared helper), but `get_parser("typescript")` for `.ts` and `get_parser("tsx")` for `.tsx`. Add a `JS_TS_GLOBALS`/per-language collision set analogous to `STDLIB_STEMS` (e.g. `console`, `Math`, `JSON`, `Object`, `Array`, `Promise`, `window`, `document`) so the leaf-name caller gate doesn't false-positive on `console.log`-style calls.
+- [ ] Step 4 — run, expect PASS.
+- [ ] Step 5 — commit. Then re-run the WHOLE suite and a build over a small mixed py+ts fixture to confirm the renderer/graph/query are unchanged.
+
+---
+
+# Phase 2 — FS Watcher
+
+**Goal:** keep the index and sidecars live as files change, so the proxy (Phase 3) always reads a current `.key.md`. Pure dispatch/debounce logic is unit-tested directly (no flaky real-FS events); the `watchdog` wiring is a thin shell.
+
+**Tech:** add `watchdog>=4` to deps.
+
+### Task 2.1: change dispatcher
+**Files:** Create `src/keymd/engine/watcher/__init__.py` (empty); Create `src/keymd/engine/watcher/dispatch.py`; Create `tests/test_watch_dispatch.py`.
+- [ ] **Step 1: failing test**
+```python
+# tests/test_watch_dispatch.py
+from pathlib import Path
+from keymd.engine import index
+from keymd.engine.watcher import dispatch
+import keymd.engine.parsers.python  # noqa: F401
+
+
+def test_on_change_source_syncs(env_proj):
+    index.build(verbose=False)
+    pkg = Path(env_proj) / "pkg"
+    (pkg / "parser.py").touch()  # mtime bump
+    # appending a symbol then dispatching should reindex it
+    src = (pkg / "parser.py").read_text(encoding="utf-8")
+    (pkg / "parser.py").write_text(src + "\n\ndef watched():\n    return 0\n",
+                                   encoding="utf-8")
+    try:
+        dispatch.on_change(str(pkg / "parser.py"))
+        from keymd.engine import db, config
+        con = db.connect(config.index_path())
+        names = {r[0] for r in con.execute(
+            "SELECT name FROM symbols WHERE path=?",
+            (str(pkg / "parser.py"),)).fetchall()}
+        con.close()
+        assert "watched" in names
+    finally:
+        (pkg / "parser.py").write_text(src, encoding="utf-8")
+        (pkg / "parser.key.md").unlink(missing_ok=True)
+
+
+def test_on_change_keymd_reindexes_fts(env_proj, tmp_path):
+    index.build(verbose=False)
+    pkg = Path(env_proj) / "pkg"
+    key = pkg / "parser.key.md"
+    key.write_text("# parser\napi:\n  zzunique_token\n", encoding="utf-8")
+    try:
+        dispatch.on_change(str(key))
+        from keymd.engine import query
+        assert any("parser.key.md" in p for p, _ in query.search("zzunique_token"))
+    finally:
+        key.unlink(missing_ok=True)
+```
+- [ ] **Step 2: run, expect FAIL** (`No module named 'keymd.engine.watcher.dispatch'`).
+- [ ] **Step 3: implement**
+```python
+# src/keymd/engine/watcher/dispatch.py
+"""dispatch.py — route a changed path to the right index update."""
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+from keymd.engine import config, db
+from keymd.engine.parsers.base import get_parser_for
+from keymd.engine.sync_one import sync_one
+
+
+def _reindex_keymd(path: str) -> None:
+    p = Path(path)
+    if not p.exists():
+        return
+    content = p.read_text(encoding="utf-8", errors="replace")
+    sha = hashlib.sha256(content.encode()).hexdigest()
+    con = db.connect(config.index_path())
+    con.execute("DELETE FROM keymd_fts WHERE path=?", (path,))
+    con.execute("INSERT INTO keymd_fts(path, content) VALUES (?, ?)",
+                (path, content))
+    src = path[:-len(".key.md")]
+    src_path = next((src + e for e in config.index_extensions()
+                     if Path(src + e).exists()), "")
+    con.execute("INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
+                "auto_refreshed_at) VALUES (?, ?, ?, NULL)", (path, src_path, sha))
+    con.commit(); con.close()
+
+
+def on_change(path: str) -> None:
+    """Single entry point: a .key.md write reindexes FTS; a source write syncs."""
+    if not config.index_path().exists():
+        return
+    if path.endswith(".key.md"):
+        _reindex_keymd(path)
+    elif get_parser_for(Path(path)) is not None:
+        sync_one(path)
+```
+- [ ] **Step 4: run, expect PASS.**
+- [ ] **Step 5: commit** `feat: watcher change dispatcher (source→sync, .key.md→FTS)`.
+
+### Task 2.2: debouncer (pure, fake-clock tested)
+**Files:** Create `src/keymd/engine/watcher/debounce.py`; Create `tests/test_debounce.py`.
+- [ ] **Step 1: failing test** — a `Debouncer(delay=0.2, fn)` given a `now()` injectable clock and a manual `flush_due(now)`; assert rapid `submit(path)` calls coalesce to ONE `fn(path)` after the quiet period, and distinct paths debounce independently.
+```python
+# tests/test_debounce.py
+from keymd.engine.watcher.debounce import Debouncer
+
+
+def test_coalesces_rapid_calls():
+    calls = []
+    d = Debouncer(delay=1.0, fn=calls.append)
+    d.submit("a.py", now=0.0)
+    d.submit("a.py", now=0.3)
+    d.flush_due(now=0.5); assert calls == []          # still within quiet window
+    d.flush_due(now=1.4); assert calls == ["a.py"]    # fired once after delay
+
+
+def test_independent_paths():
+    calls = []
+    d = Debouncer(delay=1.0, fn=calls.append)
+    d.submit("a.py", now=0.0); d.submit("b.py", now=0.6)
+    d.flush_due(now=1.1); assert calls == ["a.py"]
+    d.flush_due(now=1.7); assert calls == ["a.py", "b.py"]
+```
+- [ ] **Step 2: run, expect FAIL.**
+- [ ] **Step 3: implement**
+```python
+# src/keymd/engine/watcher/debounce.py
+"""debounce.py — coalesce rapid per-path events; clock-injectable for tests."""
+from __future__ import annotations
+
+from typing import Callable
+
+
+class Debouncer:
+    def __init__(self, delay: float, fn: Callable[[str], None]) -> None:
+        self.delay = delay
+        self.fn = fn
+        self._due: dict[str, float] = {}
+
+    def submit(self, path: str, now: float) -> None:
+        self._due[path] = now + self.delay
+
+    def flush_due(self, now: float) -> None:
+        ready = [p for p, t in self._due.items() if now >= t]
+        for p in ready:
+            del self._due[p]
+            self.fn(p)
+```
+- [ ] **Step 4: run, expect PASS.**
+- [ ] **Step 5: commit** `feat: per-path debouncer (fake-clock tested)`.
+
+### Task 2.3: watchdog wiring + `keymd watch` CLI
+**Files:** Create `src/keymd/engine/watcher/run.py`; Modify `src/keymd/cli.py` (add `watch`); Create `tests/test_watch_run_smoke.py`.
+- [ ] **Step 1: failing test** — import `run.build_observer(root)` and assert it returns a `watchdog.observers.Observer` with a handler whose `dispatch`-path filters excludes (`.keymd/`, `.git/`) and routes through a `Debouncer` wrapping `dispatch.on_change`. (Smoke/structure test — do not start a real OS watch in CI.)
+- [ ] **Step 2: run, expect FAIL.**
+- [ ] **Step 3: implement** `run.py`: a `watchdog` `FileSystemEventHandler` that, on `on_modified`/`on_created`, calls `debouncer.submit(path, time.monotonic())` after an `is_excluded` filter; a background thread (or the watchdog timer) calls `debouncer.flush_due(time.monotonic())` every ~`delay/2`s; `build_observer(root)` assembles Observer+handler; `serve(root)` runs it until interrupted. Add CLI `watch` → `run.serve(config.project_root())`.
+- [ ] **Step 4: run, expect PASS** (structure test). Plus a MANUAL verification note: `keymd watch` in one terminal, edit a `.py` in another, confirm its `.key.md` updates within ~1s.
+- [ ] **Step 5: commit** `feat: keymd watch (watchdog wiring over debouncer+dispatch)`.
+
+---
+
+# Phase 3 — Enforcing Proxy  *(detailed design + task spec — the novel core)*
+
+> **This phase is a sub-project.** It is specified to task granularity with key code for the riskiest pieces, but — like Phase 1 — it should be **written out to full TDD and run through its own adversarial review before execution.** The three hard parts (prompt-cache safety, tool-virtualization fidelity, dual wire formats) are where correctness is won or lost; do not treat the sketches below as line-complete.
+
+**Goal:** a localhost reverse-proxy that the agent's LLM endpoint points at (`ANTHROPIC_BASE_URL` / OpenAI-compatible `base_url`). It forwards to the real upstream with the user's key and, in-flight: (a) **gates** full reads/mass-greps of indexed files behind the `.key.md`, (b) exposes **virtual `keymd_*` tools** answered from the Phase-1 `query` API, (c) **redirects** oversized file blobs in context to summaries, (d) **caps** oversized tool-results. Local-only; no third party.
+
+**Tech:** `httpx` (async upstream client, `local_address="0.0.0.0"` IPv4 guard per the VPS-egress lesson), a minimal ASGI server (`uvicorn`+`starlette` or stdlib `asyncio` HTTP), SSE streaming.
+
+### Wire-format adapter contract (the seam that keeps the rest format-agnostic)
+```
+WireAdapter:
+  parse_request(body: dict) -> ReqView{ messages, tools, system, model, stream }
+  inject_tools(body, tool_defs)         -> body'      # add keymd_* tool defs
+  iter_tool_calls(assistant_msg) -> [ToolCall{id,name,args}]
+  make_tool_result(tool_call_id, text) -> msg-fragment
+  splice_assistant_turn(...)            -> body'      # for the inner loop
+  find_file_blobs(messages) -> [Blob{msg_idx, span, path?, text}]
+  replace_blob(messages, blob, new_text) -> messages' # deterministic, in place
+```
+Two impls: `AnthropicAdapter` (Messages API: `content` blocks, `tool_use`/`tool_result`, `system` top-level) and `OpenAIAdapter` (Chat Completions + Responses: `tool_calls`, `role:"tool"`). Everything else (gate, virtual tools, cache key) works on the neutral `ReqView`.
+
+### Task list (each → full TDD on expansion)
+1. **Adapter: Anthropic parse/emit** — round-trip a recorded Messages request/response through `AnthropicAdapter`; assert `iter_tool_calls`/`make_tool_result` reconstruct a valid body. Fixtures = captured (sanitized) payloads.
+2. **Adapter: OpenAI parse/emit** — same for Chat Completions + Responses.
+3. **Blob detection + path attribution** — given a `tool_result` containing a file body, match it back to a repo path (by a `Read(path)` tool_call earlier in the turn, or by content-hash against `files.sha256`). Test exact + near (line-range) matches.
+4. **Deterministic cache-safe rewrite** — `replace_blob` must be a pure function of `(path, index_sha)`: same inputs → byte-identical replacement, and the replacement is inserted at a **stable position** so the request prefix up to the first rewrite is unchanged across turns (preserve prompt-cache hits). Test: two successive turns with the same file produce identical rewritten prefixes; **assert the cache-breakpoint invariant** (no edit before the last already-rewritten blob).
+5. **Gate inner-loop (tool virtualization)** — the core. Pseudocode:
+   ```
+   async def complete(body):
+       view = adapter.parse_request(body)
+       body = adapter.inject_tools(body, KEYMD_TOOL_DEFS + system_directive)
+       while True:
+           resp = await upstream(body)                      # one upstream call
+           calls = adapter.iter_tool_calls(resp.assistant)
+           virtual = [c for c in calls if c.name.startswith("keymd_")]
+           gated   = [c for c in calls if is_gated_read(c)]  # Read/Grep of indexed large file w/o :full
+           if not virtual and not gated:
+               return resp                                   # hand the turn to the host
+           body = adapter.splice_assistant_turn(body, resp.assistant)
+           for c in virtual:
+               body = append_tool_result(body, c.id, answer_keymd_tool(c))   # from query API
+           for c in gated:
+               body = append_tool_result(body, c.id, keymd_for(c.path) + ESCALATE_HINT)
+           # loop: re-ask upstream; host never sees these turns
+   ```
+   Tests with a **mock upstream** (scripted responses): (a) a gated `Read(big.py)` returns the summary then the model proceeds → host sees only the final turn; (b) model escalates `Read(big.py:full)` → real Read call is forwarded to host; (c) a `keymd_impact` virtual call is answered locally and never reaches the host; (d) tool-call IDs/`stop_reason` preserved; (e) parallel tool-calls (one gated + one host tool) handled.
+6. **`is_gated_read` policy** — gate only `Read`/`view`/`cat`-style calls and mass `Grep` on files present in `files` with `line_count > THRESHOLD`, absent a `:full`/escalation marker; never gate writes/edits. Table-driven tests.
+7. **Virtual tool answerer** — map `keymd_read|keymd_symbol|keymd_impact|keymd_callers|keymd_callees|keymd_search` → Phase-1 `query`/`render_keymd`; JSON-serialize. Tests assert each returns the engine's data.
+8. **SSE streaming passthrough** — when the final turn streams, relay upstream SSE unmodified; inner-loop turns are non-streamed. Test with a chunked mock.
+9. **Server + config** — `keymd serve --port 8787 --upstream anthropic|openai`; reads upstream base URL + forwards `Authorization`/`x-api-key` untouched; IPv4 transport. Health check. Integration test: a scripted agent transcript through the real local server against a mock upstream yields the expected gated behavior end-to-end.
+10. **Expansion-loop guard** — once a path is escalated to `:full`, remember it per-conversation (hash of the system+first user msg) so it is never re-gated → no infinite loop. Test the loop-guard explicitly.
+
+**Hard parts (call out in the focused review):** prompt-cache breakpoint invariance (Task 4); faithful one-coherent-turn reconstruction incl. IDs/stop-reason/parallel calls (Task 5); Responses-vs-Chat-Completions divergence (Tasks 1-2); never corrupting a streamed final turn (Task 8).
+
+---
+
+# Phase 4 — Host integration + A/B benchmark  *(task outline)*
+
+- **4.1 Per-host setup docs + config snippets:** Claude Code (`ANTHROPIC_BASE_URL=http://localhost:8787`), OpenAI Codex (`openai_base_url` in `~/.codex/config.toml`), Cline (OpenAI-compatible base URL). One verified walkthrough each.
+- **4.2 `AGENTS.md`/`CLAUDE.md` steering snippet:** "before reading a file, call `keymd_read`; prefer `keymd_impact` over grep" — the soft-mode nudge for hosts that can't point at the proxy.
+- **4.3 MCP fallback server (soft mode):** thin MCP server exposing the same `keymd_*` tools over the query API, for closed IDEs (Cursor/Windsurf/Copilot) that can't set a localhost base URL. Reuses Task-3.7 answerer.
+- **4.4 A/B benchmark harness:** paired runs (proxy on/off) over a "read+edit a large file" task battery on a **public** repo; measure input tokens, lines read, and task success; target the spec's −29% tokens / −85% lines ballpark with accuracy retained. Publishable methodology (re-run, don't cite the private AOTC benchmark).
+
+# Phase 5 (v1.1) — Portable guardrails + `/handoff`  *(task outline)*
+
+- **5.1 Guardrails module (clearly labeled NOT token-saving):** generalize `push-main-gate`, `duplicate-gate`, `commit-before-build` from `aotc-harness` into env-configurable, framework-agnostic checks (git pre-commit hooks + optional proxy-side Bash-call inspection). Scrub all `/opt/coverage-ai` paths and incident narratives (keep the regex banks).
+- **5.2 `/handoff` session-compaction:** port `commands/handoff.md` (from `origin/feature/handoff-command`) into a `keymd handoff` that writes a structured catchup + paste-ready pickup block, generalized off the Claude-Code memory-wing layout.
+
+---
+
+## Cross-phase self-review
+
+- **Contracts honored:** Phases 1b/2/3 consume only the frozen Shared Contracts (`Parser` interface, `query.*`, `render_keymd`, `index.build`/`refresh_one`/`sync_one`, the schema). Phase 1b adds parsers behind the interface with zero downstream change; Phase 2 calls `sync_one`/FTS only; Phase 3 calls `query.*`/`render_keymd` only. ✅
+- **Fidelity flags (honest):** Phase 1b tree-sitter code is unverified-against-grammar (tests are truth); Phase 3 is task-spec fidelity and needs full-TDD expansion + its own adversarial review before execution. Phases 4–5 are task outlines. Phases 1 and 2 are line-complete TDD (Phase 1 reviewer-verified green).
+- **Recommended order:** Phase 1 (execute now — verified) → Phase 2 → Phase 1b → **Phase 3 focused pass (write-full + review)** → Phase 4 → Phase 5.
