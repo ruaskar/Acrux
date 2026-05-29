@@ -1453,6 +1453,24 @@ def test_refresh_rejects_outside_root(env_proj, tmp_path):
     outside = tmp_path / "x.py"
     outside.write_text("def f(): pass\n", encoding="utf-8")
     assert refresh.refresh_one(str(outside)) is False
+
+
+def test_refresh_with_relative_path_populates(env_proj):
+    # Regression: a RELATIVE path must resolve to the index's absolute key, not
+    # render an empty sidecar (dogfood bug — fixture-only tests passed abs paths).
+    import os
+    index.build(verbose=False)
+    abs_py = str(Path(env_proj) / "pkg" / "parser.py")
+    rel_py = os.path.relpath(abs_py, os.getcwd())
+    key = Path(abs_py[:-3] + ".key.md")
+    try:
+        assert refresh.refresh_one(rel_py) is True
+        text = key.read_text(encoding="utf-8")
+        assert "def parse_header(buf: bytes) -> dict" in text  # not an empty render
+        assert "[python ·" in text
+    finally:
+        key.unlink(missing_ok=True)
+        Path(str(key) + ".tmp").unlink(missing_ok=True)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1497,9 +1515,13 @@ def refresh_one(src_path: str) -> bool:
     p = Path(src_path)
     if not p.exists() or get_parser_for(p) is None:
         return False
-    if not _confined(src_path):
+    # Normalize to the absolute path the index keys on. build() stores absolute
+    # paths and query.* use os.path.abspath; without this a relative CLI arg
+    # like `src/foo.py` matches zero rows and renders an empty sidecar.
+    abs_src = os.path.abspath(src_path)
+    if not _confined(abs_src):
         return False
-    key_path = Path(src_path[:-len(p.suffix)] + ".key.md")
+    key_path = Path(abs_src[:-len(p.suffix)] + ".key.md")
     if key_path.exists() and not _confined(str(key_path)):
         return False
     db_path = config.index_path()
@@ -1507,7 +1529,7 @@ def refresh_one(src_path: str) -> bool:
         return False
 
     con = db.connect(db_path)
-    new_content = render_keymd(con, str(p))
+    new_content = render_keymd(con, abs_src)
     con.close()
 
     existing = key_path.read_text(encoding="utf-8") if key_path.exists() else ""
@@ -1524,7 +1546,7 @@ def refresh_one(src_path: str) -> bool:
         con.execute(
             "INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
             "auto_refreshed_at) VALUES (?, ?, ?, ?)",
-            (str(key_path), str(p), sha, time.time()))
+            (str(key_path), abs_src, sha, time.time()))
         con.commit()
         con.close()
     except sqlite3.Error:
@@ -1641,7 +1663,9 @@ def sync_one(src_path: str) -> None:
     if parser is None or not p.exists():
         return
     con = db.connect(db_path)
-    sp = str(p)
+    # Absolute path the index keys on (build() stores absolute paths); a relative
+    # arg would DELETE nothing then re-INSERT an orphan row.
+    sp = os.path.abspath(src_path)
 
     # capture dependents BEFORE we mutate edges (so a removed call still cascades)
     dependents = set(_dependents(con, sp))
@@ -2100,7 +2124,11 @@ A 3-reviewer adversarial pass ran on this plan; one reviewer built the package v
 - **[major]** `query.callers` restored the source's leaf-name fallback (`{symbol, exact, leaf}`), pinned in Shared Contracts, with a new `test_callers_leaf_fallback`, so `keymd_callers` (Phase 3) stays consistent with `keymd_impact`.
 - **[minor]** class signatures now include keyword/metaclass bases; `test_refresh` cleanup moved into `try/finally`; `refresh_one` uses the single `get_parser_for` indexability predicate (no more `get_ext`); empty-vs-missing query semantics documented in Contracts; Task 12 freshness claim narrowed to add/remove (ambiguity-reintroduction noted as a Phase-2 item).
 
-Net: Phase 1 is verified green (26 plan tests + the new leaf-fallback test = 27) modulo the executor re-running the suite.
+Net: Phase 1 is verified green (27 tests after the leaf-fallback addition).
+
+### Post-execution fix (dogfood, 2026-05-29)
+
+Phase 1 was implemented and run: **28/28 pytest green** on Python 3.11.9/Windows. Dogfooding the CLI on the keymd package itself surfaced a bug the fixture-only tests missed: `refresh_one`/`sync_one` queried the index with the path **as given**, but `build()` stores **absolute** paths — so a relative CLI arg (`keymd refresh src/foo.py`) matched zero rows and rendered an empty sidecar. Fixed both functions to `os.path.abspath(src_path)` before keying (matching `query.*`), with a new `test_refresh_with_relative_path_populates` regression test (→ 28 tests). Reflected into Tasks 11 & 12 above.
 
 ---
 

@@ -1,0 +1,75 @@
+"""refresh.py — (re)generate one .key.md sidecar from the index.
+
+Whole-file generation (no human region). Atomic write, idempotent excluding
+the timestamp line, with realpath confinement so a symlinked path cannot write
+outside the project root.
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+import sys
+import time
+from pathlib import Path
+
+from keymd.engine import config, db
+from keymd.engine.keymd_render import render_keymd, strip_timestamp
+from keymd.engine.parsers.base import get_parser_for
+
+
+def _confined(path: str) -> bool:
+    try:
+        real = os.path.realpath(path)
+        root = os.path.realpath(str(config.project_root()))
+    except OSError:
+        return False
+    return real == root or real.startswith(root + os.sep)
+
+
+def refresh_one(src_path: str) -> bool:
+    """Create/refresh the sibling .key.md for src_path. True iff it changed."""
+    p = Path(src_path)
+    if not p.exists() or get_parser_for(p) is None:
+        return False
+    # Normalize to the absolute path the index keys on. build() stores absolute
+    # paths and query.* use os.path.abspath; without this a relative CLI arg
+    # like `src/foo.py` matches zero rows and renders an empty sidecar.
+    abs_src = os.path.abspath(src_path)
+    if not _confined(abs_src):
+        return False
+    key_path = Path(abs_src[:-len(p.suffix)] + ".key.md")
+    if key_path.exists() and not _confined(str(key_path)):
+        return False
+    db_path = config.index_path()
+    if not db_path.exists():
+        return False
+
+    con = db.connect(db_path)
+    new_content = render_keymd(con, abs_src)
+    con.close()
+
+    existing = key_path.read_text(encoding="utf-8") if key_path.exists() else ""
+    if existing and strip_timestamp(new_content) == strip_timestamp(existing):
+        return False
+
+    tmp = key_path.with_suffix(key_path.suffix + ".tmp")
+    tmp.write_text(new_content, encoding="utf-8")
+    os.replace(tmp, key_path)
+
+    try:
+        con = db.connect(db_path)
+        sha = __import__("hashlib").sha256(new_content.encode()).hexdigest()
+        con.execute(
+            "INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
+            "auto_refreshed_at) VALUES (?, ?, ?, ?)",
+            (str(key_path), abs_src, sha, time.time()))
+        con.commit()
+        con.close()
+    except sqlite3.Error:
+        pass
+    return True
+
+
+if __name__ == "__main__":
+    for arg in sys.argv[1:]:
+        print(f"{arg}: {'updated' if refresh_one(arg) else 'no change'}")
