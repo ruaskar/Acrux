@@ -131,3 +131,55 @@ def run_agent(cmd: list[str], *, root=None, rebuild=False, flag_host=None,
         return 130
     finally:
         srv.should_exit = True
+
+
+DEFAULT_TOML = (
+    "# keymd.toml — committed; NO secrets (API keys ride on request headers)\n"
+    "[keymd]\n"
+    "threshold = 400          # gate files larger than this many loc\n\n"
+    "[keymd.serve]\n"
+    'host = "127.0.0.1"\n'
+    "port = 8787\n"
+    'wire = "openai"          # "openai" | "anthropic"\n'
+    '# upstream = "https://api.openai.com"   # base URL only; never a key\n'
+)
+
+# Embedded so it ships with the installed package (repo-root templates/ is not packaged).
+_AGENTS_SNIPPET = """<!-- keymd steering snippet -->
+
+## Reading code efficiently (keymd)
+
+Before reading a LARGE file in full, call `keymd_read(path)` for its compact
+summary (API signatures, dependencies, callers). Use `keymd_impact(path)`,
+`keymd_callers(symbol)`, `keymd_callees(path)`, and `keymd_search(text)` to
+understand structure instead of grepping. Only call `keymd_read_full(path)`
+when the summary is genuinely insufficient.
+"""
+_AGENTS_MARKER = "keymd steering snippet"
+
+
+def init(*, path=None, force=False, write_agents=False) -> int:
+    root = Path(path).resolve() if path else config.project_root()
+    cfg = root / "keymd.toml"
+    if cfg.exists() and not force:
+        print(f"keymd.toml already exists at {cfg} (use --force to overwrite)")
+    else:
+        cfg.write_text(DEFAULT_TOML, encoding="utf-8")
+        print(f"wrote {cfg}")
+    res = index.build(verbose=False)
+    print(f"indexed: {res.get('symbols', '?')} symbols across "
+          f"{res.get('files', '?')} files")
+    if write_agents:
+        agents = root / "AGENTS.md"
+        existing = agents.read_text(encoding="utf-8") if agents.exists() else ""
+        if _AGENTS_MARKER in existing:
+            print(f"AGENTS.md already has keymd steering ({agents})")
+        else:
+            agents.write_text((existing + "\n" + _AGENTS_SNIPPET) if existing
+                              else _AGENTS_SNIPPET, encoding="utf-8")
+            print(f"appended keymd steering to {agents}")
+    else:
+        print("\n--- add to your agent's AGENTS.md / system prompt ---")
+        print(_AGENTS_SNIPPET)
+    print("\nNext: `keymd run -- <your agent>`  or  `keymd up`")
+    return 0
