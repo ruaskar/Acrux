@@ -24,6 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     se = sp.add_parser("search"); se.add_argument("text")
     se.add_argument("--limit", type=int, default=15)
     mk = sp.add_parser("missing-keymds"); mk.add_argument("--top", type=int, default=30)
+    sv = sp.add_parser("serve")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--threshold", type=int, default=400)
 
     a = p.parse_args(argv)
 
@@ -66,6 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "missing-keymds":
         for lc, path in query.missing_keymds(a.top):
             print(f"  {lc:5d}L  {path}")
+    elif a.cmd == "serve":
+        from keymd.proxy import server  # lazy: proxy extra deps only needed here
+        print(f"keymd proxy on http://{a.host}:{a.port} "
+              f"(threshold={a.threshold} loc) → {server.UPSTREAM_BASE}")
+        server.serve(host=a.host, port=a.port, threshold=a.threshold)
     return 0
 
 
