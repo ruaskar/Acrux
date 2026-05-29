@@ -48,8 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--host")
         parser.add_argument("--port", type=int)
         parser.add_argument("--threshold", type=int)
-        parser.add_argument("--wire", choices=["openai", "anthropic"])
-        parser.add_argument("--upstream")
+        parser.add_argument("--wire", choices=["openai", "anthropic"],
+                            help="which wire --upstream binds to (default openai)")
+        parser.add_argument("--upstream",
+                            help="upstream base URL for the selected --wire "
+                                 "(Anthropic gateway → also pass --wire anthropic)")
         parser.add_argument("--rebuild", action="store_true")
     up = sp.add_parser("up"); _serve_flags(up)
     rn = sp.add_parser("run"); _serve_flags(rn)
@@ -60,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     doc = sp.add_parser("doctor")
     doc.add_argument("--wire", action="store_true")
     doc.add_argument("--net", action="store_true")
+    idep = sp.add_parser("ide"); idep.add_argument("tool", nargs="?")
 
     a = p.parse_args(argv)
 
@@ -136,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "doctor":
         from keymd import onboarding
         return onboarding.doctor(wire=a.wire, net=a.net)
+    elif a.cmd == "ide":
+        from keymd import onboarding
+        return onboarding.ide(tool=a.tool)
     return 0
 
 

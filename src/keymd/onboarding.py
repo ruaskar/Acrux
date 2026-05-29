@@ -77,6 +77,16 @@ def _serve_kwargs(r: Resolved) -> dict:
             "upstream": ab, "openai_base": ob}
 
 
+def _announce_upstream(r: Resolved) -> None:
+    # --upstream binds to ONE wire (the resolved --wire, default openai). Surface
+    # it so a Claude Code (Anthropic-wire) user who forgot --wire anthropic sees
+    # the binding instead of silently routing to the public Anthropic API.
+    if r.upstream:
+        print(f"upstream override → {r.wire} wire: {r.upstream}  "
+              f"(pass --wire {'anthropic' if r.wire == 'openai' else 'openai'} "
+              "to bind the other wire)")
+
+
 def up(*, root=None, rebuild=False, flag_host=None, flag_port=None,
        flag_threshold=None, flag_wire=None, flag_upstream=None) -> int:
     r = resolve(root=root, flag_host=flag_host, flag_port=flag_port,
@@ -84,6 +94,7 @@ def up(*, root=None, rebuild=False, flag_host=None, flag_port=None,
                 flag_upstream=flag_upstream)
     _ensure_index(rebuild)
     print(f"keymd proxy on {_base(r.host, r.port)} (threshold={r.threshold} loc)")
+    _announce_upstream(r)
     print(wiring_hint(r.host, r.port))
     from keymd.proxy import server
     server.serve(**_serve_kwargs(r))
@@ -119,6 +130,7 @@ def run_agent(cmd: list[str], *, root=None, rebuild=False, flag_host=None,
                 flag_upstream=flag_upstream)
     _ensure_index(rebuild)
     srv = _start_proxy(r)
+    _announce_upstream(r)
     print(f"keymd proxy on {_base(r.host, r.port)} → launching: {' '.join(cmd)}")
     env = child_env(os.environ, r.host, r.port)
     try:
@@ -239,3 +251,54 @@ def doctor(*, wire: bool = False, net: bool = False) -> int:
             reach = False
         _check(f"upstream reachable ({host})", reach, "check network / upstream URL")
     return 0 if hard_ok else 1
+
+
+def _ide_entries(host: str, port: int) -> dict:
+    b = f"http://{host}:{port}"
+    return {
+        "claude-code": ("Anthropic wire",
+            f'~/.claude/settings.json → "env": {{"ANTHROPIC_BASE_URL": "{b}"}}  '
+            "(CLI + VS Code + JetBrains; restart after). keymd serves /v1/messages "
+            "AND /v1/messages/count_tokens."),
+        "codex": ("OpenAI wire",
+            f'~/.codex/config.toml → a NAMED provider (not the built-in "openai") with '
+            f'base_url="{b}/v1", env_key="OPENAI_API_KEY", wire_api="chat" OR "responses" '
+            f"(both supported). Quick one-off: export OPENAI_BASE_URL={b}/v1"),
+        "cline": ("OpenAI wire",
+            f"Settings → API Provider = 'OpenAI Compatible' → Base URL = {b}/v1"),
+        "continue": ("OpenAI wire",
+            f"config.yaml → provider: openai, apiBase: {b}/v1"),
+        "cursor": ("OpenAI wire",
+            f"Settings → Override OpenAI Base URL = {b}/v1"),
+        "roo": ("OpenAI wire",
+            f"Settings → API Provider 'OpenAI Compatible' → Base URL = {b}/v1 (same as Cursor)"),
+        "aider": ("OpenAI wire",
+            f"export OPENAI_API_BASE={b}/v1  (or OPENAI_BASE_URL; or set in .aider.conf.yml)"),
+        "openclaw": ("OpenAI wire",
+            f"models.providers.<id>.baseUrl = {b}/v1  (OpenAI-Chat default)"),
+        "hermes": ("OpenAI or Anthropic wire",
+            f"config.yaml → provider: custom, base_url = {b} (Anthropic) or {b}/v1 "
+            "(OpenAI). It forces streaming — keymd's synthesized SSE handles it."),
+    }
+
+
+def ide(tool: str | None = None) -> int:
+    """Print exact wiring to point an IDE/framework at keymd (attach mode)."""
+    r = resolve()
+    entries = _ide_entries(r.host, r.port)
+    print(f"keymd proxy base: http://{r.host}:{r.port}  "
+          "(start it with `keymd up`; leave it running in a spare terminal)\n")
+    if tool:
+        key = tool.lower()
+        if key not in entries:
+            print(f"unknown tool '{tool}'. Known: {', '.join(entries)}")
+            return 1
+        wire, how = entries[key]
+        print(f"# {key}  [{wire}]\n  {how}")
+    else:
+        for key, (wire, how) in entries.items():
+            print(f"# {key}  [{wire}]\n  {how}\n")
+        print("keymd routes by WIRE FORMAT (OpenAI vs Anthropic), not by model — any "
+              "model behind an OpenAI/Anthropic-compatible endpoint (GPT, Claude, Hermes, "
+              "Qwen, Llama via vLLM / Ollama / LM Studio / LiteLLM) works.")
+    return 0
