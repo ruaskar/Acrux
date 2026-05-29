@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     doc = sp.add_parser("doctor")
     doc.add_argument("--wire", action="store_true")
     doc.add_argument("--net", action="store_true")
+    idep = sp.add_parser("ide"); idep.add_argument("tool", nargs="?")
 
     a = p.parse_args(argv)
 
@@ -136,6 +137,9 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "doctor":
         from keymd import onboarding
         return onboarding.doctor(wire=a.wire, net=a.net)
+    elif a.cmd == "ide":
+        from keymd import onboarding
+        return onboarding.ide(tool=a.tool)
     return 0
 
 
