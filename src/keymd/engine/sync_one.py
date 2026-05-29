@@ -45,6 +45,11 @@ def sync_one(src_path: str) -> None:
 
     # capture dependents BEFORE we mutate edges (so a removed call still cascades)
     dependents = set(_dependents(con, sp))
+    # leaves this file currently defines — used to invalidate INCOMING pointers
+    # to any symbol it no longer defines after the edit (rename/remove).
+    old_syms = {r[0] for r in con.execute(
+        "SELECT name FROM symbols WHERE path=?", (sp,)).fetchall()}
+    old_leaves = {n.rsplit(".", 1)[-1] for n in old_syms if "." in n} | old_syms
 
     con.execute("DELETE FROM symbols WHERE path=?", (sp,))
     con.execute("DELETE FROM edges WHERE from_path=?", (sp,))
@@ -62,6 +67,17 @@ def sync_one(src_path: str) -> None:
         "INSERT OR IGNORE INTO edges(from_path, from_name, to_name, to_path, "
         "kind, line) VALUES (?, ?, ?, NULL, ?, ?)",
         [(sp, e.from_name, e.to_name, e.kind, e.line) for e in result.edges])
+    # Step 1: for symbols this file no longer defines (renamed/removed), NULL the
+    # INCOMING edges other files resolved to us. The global re-resolve below only
+    # touches to_path IS NULL, so a stale NON-null pointer would otherwise dangle
+    # (wrong "calls (resolved)" in dependents' .key.md) until the next full build.
+    new_leaves = ({s.name.rsplit(".", 1)[-1] for s in result.symbols if "." in s.name}
+                  | {s.name for s in result.symbols})
+    lost = old_leaves - new_leaves
+    if lost:
+        ph = ",".join("?" * len(lost))
+        con.execute(f"UPDATE edges SET to_path=NULL "
+                    f"WHERE to_path=? AND to_name IN ({ph})", (sp, *lost))
     # re-resolve edges touching this file (both directions)
     con.execute("""
         UPDATE edges SET to_path = (
