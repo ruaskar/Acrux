@@ -6,6 +6,7 @@ import json
 import sys
 
 import keymd.engine.parsers.python  # noqa: F401  (registers the .py parser)
+import keymd.engine.parsers.treesitter  # noqa: F401  (registers JS/TS if `lang` extra installed)
 from keymd.engine import index, query, refresh, sync_one
 
 
