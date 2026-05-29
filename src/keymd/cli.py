@@ -29,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--threshold", type=int, default=400)
+    gd = sp.add_parser("guard")
+    gd.add_argument("action", choices=["check-push", "check-dup", "install"])
+    gd.add_argument("rest", nargs="*")
 
     a = p.parse_args(argv)
 
@@ -76,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"keymd proxy on http://{a.host}:{a.port} "
               f"(threshold={a.threshold} loc) → {server.UPSTREAM_BASE}")
         server.serve(host=a.host, port=a.port, threshold=a.threshold)
+    elif a.cmd == "guard":
+        from keymd.guardrails import cli as gcli
+        return gcli.run(a.action, a.rest)
     return 0
 
 
