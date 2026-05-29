@@ -10,8 +10,8 @@ These are the frozen interfaces. Any phase that needs to alter one must update t
 
 - **Env / paths:** `KEYMD_PROJECT_ROOT` → git toplevel → cwd; index at `KEYMD_INDEX_PATH` or `<root>/.keymd/index.db`; source roots via `KEYMD_INDEX_DIRS` or auto-discover; excludes via `KEYMD_EXCLUDE_PATTERNS`.
 - **DB schema (Phase 1, Task 4):** `files(path,lang,sha256,mtime,line_count,has_keymd,indexed_at)` · `symbols(path,name,kind,line,signature)` · `edges(from_path,from_name,to_name,to_path,kind,line)` · `keymds(path,src_path,sha256,auto_refreshed_at)` · `keymd_fts(path UNINDEXED, content)`.
-- **Parser interface (Phase 1, Task 5):** `Parser.parse(path) -> ParseResult{ symbols:[Symbol(name,kind,line,signature)], edges:[Edge(from_name,to_name,kind,line)], line_count:int }`; registered by file extension; `get_parser_for(path)`.
-- **Engine query API (consumed by Proxy + Watcher + CLI):** `query.callers(symbol)` · `query.callees(path)->[(to_name,relpath)]` · `query.symbols(path)->[(name,kind,line)]` · `query.impact(path)->{path,per_symbol,unique_files}` · `query.search(text,limit)->[(relpath,snippet)]` · `query.stats()`. Heuristic: `graph.callers_for_symbol(cur,sym,defining_path,defining_stem)->set[str]`.
+- **Parser interface (Phase 1, Task 5):** `Parser.parse(path) -> ParseResult{ symbols:[Symbol(name,kind,line,signature)], edges:[Edge(from_name,to_name,kind,line)], line_count:int }`; registered by file extension; **`get_parser_for(path) is not None` is the single "is this file indexable?" predicate — used by build, refresh, AND sync_one (do not open-code a second check).** Parser-level `Symbol`/`Edge` carry NO path; the DB rows (schema above) add `path`/`from_path` downstream — don't conflate the parser dataclass with the DB row when querying directly.
+- **Engine query API (consumed by Proxy + Watcher + CLI):** `query.callers(symbol)->{symbol, exact:[(relpath,from_name)], leaf:[(relpath,from_name)]}` (exact qualified-name match + leaf-name fallback, matching the source) · `query.callees(path)->[(to_name,relpath)]` · `query.symbols(path)->[(name,kind,line)]` · `query.impact(path)->{path,per_symbol,unique_files}` · `query.search(text,limit)->[(relpath,snippet)]` · `query.stats()`. **`callees`/`symbols` return `[]` for BOTH an unindexed and an indexed-but-empty file (no error signaling — a Phase-3 reader that must distinguish "unindexed → fall through to a normal read" has to check the `files` table directly).** Heuristic: `graph.callers_for_symbol(cur,sym,defining_path,defining_stem)->set[str]`.
 - **Sidecar contract:** whole-file machine-generated, **no human region**; `render_keymd(con,src_path)->str`; idempotent modulo the `refreshed:` line via `strip_timestamp`.
 - **Engine entrypoints for later phases:** `index.build(verbose)->dict` · `refresh.refresh_one(src_path)->bool` · `sync_one.sync_one(src_path)->None`.
 
@@ -739,8 +739,12 @@ def _call_name(node) -> str | None:
 
 def _signature(node) -> str:
     if isinstance(node, ast.ClassDef):
-        bases = ", ".join(ast.unparse(b) for b in node.bases)
-        return f"class {node.name}({bases})" if bases else f"class {node.name}"
+        # Include keyword bases (e.g. metaclass=Meta), which live in
+        # node.keywords, not node.bases — else `class C(metaclass=M)` renders bare.
+        parts = [ast.unparse(b) for b in node.bases]
+        parts += [ast.unparse(k) for k in node.keywords]
+        inner = ", ".join(parts)
+        return f"class {node.name}({inner})" if inner else f"class {node.name}"
     prefix = "async def " if isinstance(node, ast.AsyncFunctionDef) else "def "
     args = ast.unparse(node.args)
     ret = f" -> {ast.unparse(node.returns)}" if node.returns else ""
@@ -976,8 +980,17 @@ def iter_keymd_files():
                 yield p
 
 
+_LANG_BY_EXT = {
+    ".py": "python", ".js": "javascript", ".jsx": "javascript",
+    ".mjs": "javascript", ".cjs": "javascript",
+    ".ts": "typescript", ".tsx": "typescript",
+}
+
+
 def _lang_for(path: Path) -> str:
-    return path.suffix.lstrip(".") or "?"
+    # Human-readable language label, stored in files.lang and shown in the
+    # .key.md header (e.g. "python", not "py"). Matches spec §2 sample header.
+    return _LANG_BY_EXT.get(path.suffix) or path.suffix.lstrip(".") or "?"
 
 
 def build(verbose: bool = True) -> dict:
@@ -1425,12 +1438,15 @@ import keymd.engine.parsers.python  # noqa: F401
 def test_refresh_creates_and_is_idempotent(env_proj):
     index.build(verbose=False)
     parser_py = str(Path(env_proj) / "pkg" / "parser.py")
-    assert refresh.refresh_one(parser_py) is True            # created
     key = Path(parser_py[:-3] + ".key.md")
-    assert key.exists()
-    assert "def parse_header(buf: bytes) -> dict" in key.read_text(encoding="utf-8")
-    assert refresh.refresh_one(parser_py) is False           # no content change
-    key.unlink()  # keep fixture clean
+    try:
+        assert refresh.refresh_one(parser_py) is True            # created
+        assert key.exists()
+        assert "def parse_header(buf: bytes) -> dict" in key.read_text(encoding="utf-8")
+        assert refresh.refresh_one(parser_py) is False           # no content change
+    finally:
+        key.unlink(missing_ok=True)
+        Path(str(key) + ".tmp").unlink(missing_ok=True)
 
 
 def test_refresh_rejects_outside_root(env_proj, tmp_path):
@@ -1464,6 +1480,7 @@ from pathlib import Path
 
 from keymd.engine import config, db
 from keymd.engine.keymd_render import render_keymd, strip_timestamp
+from keymd.engine.parsers.base import get_parser_for
 
 
 def _confined(path: str) -> bool:
@@ -1478,7 +1495,7 @@ def _confined(path: str) -> bool:
 def refresh_one(src_path: str) -> bool:
     """Create/refresh the sibling .key.md for src_path. True iff it changed."""
     p = Path(src_path)
-    if not p.exists() or get_ext(p) is None:
+    if not p.exists() or get_parser_for(p) is None:
         return False
     if not _confined(src_path):
         return False
@@ -1515,13 +1532,6 @@ def refresh_one(src_path: str) -> bool:
     return True
 
 
-def get_ext(p: Path) -> str | None:
-    for ext in config.index_extensions():
-        if p.name.endswith(ext):
-            return ext
-    return None
-
-
 if __name__ == "__main__":
     for arg in sys.argv[1:]:
         print(f"{arg}: {'updated' if refresh_one(arg) else 'no change'}")
@@ -1543,7 +1553,7 @@ git commit -m "feat: refresh_one writes sidecar atomically (confined, idempotent
 
 ## Task 12: sync_one — incremental re-index + cascade
 
-Re-index a single edited file and refresh its sidecar plus the sidecars of files that depend on it (so callers' `called_by` lines stay correct after a rename).
+Re-index a single edited file and refresh its sidecar plus the sidecars of files that depend on it, so callers' `called_by` lines stay correct when a symbol is added or removed. *(Limitation, inherited from the build-time resolver: if an edit makes a previously-unique symbol name ambiguous, edges already resolved to the old single path are not re-NULLed — a Phase-2 watcher hardening item, not exercised by Phase-1 tests.)*
 
 **Files:**
 - Create: `src/keymd/engine/sync_one.py`
@@ -1723,6 +1733,15 @@ def test_callees_resolved(env_proj):
     assert any(to_name == "parse_header" for to_name, _ in res)
 
 
+def test_callers_leaf_fallback(env_proj):
+    index.build(verbose=False)
+    res = query.callers("Parser.parse")
+    # No edge records the qualified 'Parser.parse'; the call is `p.parse`,
+    # recorded under leaf 'parse'. exact must be empty, leaf must find run().
+    assert res["exact"] == []
+    assert any(name == "run" for _, name in res["leaf"])
+
+
 def test_search_matches_after_keymd(env_proj):
     from keymd.engine import refresh
     index.build(verbose=False)
@@ -1767,8 +1786,21 @@ def callers(symbol: str) -> dict:
     cur.execute("SELECT DISTINCT from_path, from_name FROM edges "
                 "WHERE kind='call' AND to_name=? ORDER BY from_path", (symbol,))
     exact = [(relpath(p), n) for p, n in cur.fetchall()]
+    # Leaf-name fallback (matches the source query.py): a qualified symbol like
+    # `Parser.parse` is invoked as `p.parse`, recorded under the leaf `parse`,
+    # so exact-only matching would miss it. Keeps `keymd_callers` (Phase 3)
+    # consistent with `keymd_impact`, which leaf-matches via the heuristic.
+    leaf_name = symbol.rsplit(".", 1)[-1] if "." in symbol else None
+    leaf: list[tuple[str, str]] = []
+    if leaf_name and leaf_name != symbol:
+        cur.execute("SELECT DISTINCT from_path, from_name FROM edges "
+                    "WHERE kind='call' AND to_name=? ORDER BY from_path",
+                    (leaf_name,))
+        seen = set(exact)
+        leaf = [(relpath(p), n) for p, n in cur.fetchall()
+                if (relpath(p), n) not in seen]
     con.close()
-    return {"symbol": symbol, "exact": exact}
+    return {"symbol": symbol, "exact": exact, "leaf": leaf}
 
 
 def callees(path: str) -> list[tuple[str, str]]:
@@ -1852,7 +1884,7 @@ def stats() -> dict:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_query.py -v`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 5: Commit**
 
@@ -1935,9 +1967,13 @@ def main(argv: list[str] | None = None) -> int:
         sync_one.sync_one(a.path); print(f"{a.path}: synced")
     elif a.cmd == "callers":
         res = query.callers(a.symbol)
-        print(f"# callers of {res['symbol']} ({len(res['exact'])})")
+        print(f"# callers of {res['symbol']} — exact ({len(res['exact'])})")
         for path, name in res["exact"]:
             print(f"  {path:60s} {name}")
+        if res["leaf"]:
+            print(f"# leaf-name matches ({len(res['leaf'])}, may include overloads)")
+            for path, name in res["leaf"]:
+                print(f"  {path:60s} {name}")
     elif a.cmd == "callees":
         rows = query.callees(a.path)
         print(f"# resolved calls from {a.path} ({len(rows)})")
@@ -2055,7 +2091,16 @@ git commit -m "test: end-to-end build→sidecar→query flow"
 
 **3. Type/name consistency:** `callers_for_symbol(cur, sym, defining_path, defining_stem)` defined in Task 9, used identically in Tasks 10 & 13. `render_keymd(con, src_path)` + `strip_timestamp` defined Task 10, used Task 11. `refresh_one(src_path)->bool` defined Task 11, used Tasks 12,14. `sync_one(src_path)` Task 12. `ParseResult`/`Symbol`/`Edge` fields consistent across Tasks 5,6,8,12. `index.build(verbose)` + `_lang_for` Task 8, reused Task 12. Env vars `KEYMD_PROJECT_ROOT`/`KEYMD_INDEX_PATH` consistent (Tasks 2,3). ✅
 
-*One watch item for the executor:* `index.build` deletes & recreates the DB; `search` tests re-build after writing a sidecar so the new `.key.md` enters FTS (Task 13 test does this explicitly). `sync_one` does NOT re-add FTS rows for changed sidecars — acceptable in Plan 1 (FTS freshness on sidecar writes is a Plan 2/watcher concern); noted so it isn't mistaken for a bug.
+*One watch item for the executor:* `index.build` deletes & recreates the DB; `search` tests re-build after writing a sidecar so the new `.key.md` enters FTS (Task 13 test does this explicitly). `sync_one` does NOT re-add FTS rows for changed sidecars — acceptable in Phase 1 (FTS freshness on sidecar writes is a Phase 2/watcher concern); noted so it isn't mistaken for a bug.
+
+### Post-review fixes applied (adversarial review, 2026-05-29)
+
+A 3-reviewer adversarial pass ran on this plan; one reviewer built the package verbatim from the code blocks and ran pytest on Windows/Python 3.11.9 (25 passed, 1 failed). Fixes folded in:
+- **[critical]** `_lang_for` now maps extension→language label (`.py`→`python`, etc.) so the rendered header is `[python · …]` and Task 10's assertion passes — the reviewer confirmed all tests green after this one-line change. (Forward-compatible with the Phase-1b JS/TS labels.)
+- **[major]** `query.callers` restored the source's leaf-name fallback (`{symbol, exact, leaf}`), pinned in Shared Contracts, with a new `test_callers_leaf_fallback`, so `keymd_callers` (Phase 3) stays consistent with `keymd_impact`.
+- **[minor]** class signatures now include keyword/metaclass bases; `test_refresh` cleanup moved into `try/finally`; `refresh_one` uses the single `get_parser_for` indexability predicate (no more `get_ext`); empty-vs-missing query semantics documented in Contracts; Task 12 freshness claim narrowed to add/remove (ambiguity-reintroduction noted as a Phase-2 item).
+
+Net: Phase 1 is verified green (26 plan tests + the new leaf-fallback test = 27) modulo the executor re-running the suite.
 
 ---
 
