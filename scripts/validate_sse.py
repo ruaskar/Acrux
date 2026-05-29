@@ -16,10 +16,8 @@ saw the injected ⟪keymd-summary⟫ as a tool result on turn 2).
 """
 import os
 import socket
-import tempfile
 import threading
 import time
-from pathlib import Path
 
 THRESHOLD = 50  # gate files larger than this many loc
 
@@ -46,12 +44,11 @@ def _serve(app, port):
 
 
 def main() -> int:
-    tmp = Path(tempfile.mkdtemp(prefix="keymd_sse_"))
-    big = tmp / "big.py"
-    big.write_text(
-        '"""A deliberately large module so the gate fires."""\n'
-        + "\n".join(f"def fn_{i}(x):\n    return x + {i}\n" for i in range(60)),
-        encoding="utf-8")
+    # Shared with keymd doctor --wire: the temp repo + scripted response bodies
+    # live in keymd.proxy.selfcheck (DRY). This script keeps its distinct
+    # real-socket + real-SDK driver below.
+    from keymd.proxy import selfcheck
+    tmp, big = selfcheck.build_big_repo()
 
     # env MUST be set before importing keymd.proxy.server (OPENAI_BASE read at import)
     stub_port, proxy_port = _free_port(), _free_port()
@@ -65,8 +62,7 @@ def main() -> int:
     index.build(verbose=False)
     target = canonical(str(big))
 
-    # --- stub upstream -------------------------------------------------------
-    import json
+    # --- stub upstream (Starlette route over a real socket) ------------------
     from starlette.applications import Starlette
     from starlette.responses import JSONResponse
     from starlette.routing import Route
@@ -77,20 +73,10 @@ def main() -> int:
         body = await req.json()
         i = state["n"]; state["n"] += 1
         if i == 0:  # turn 1: ask to Read the big file
-            return JSONResponse({"id": "u1", "object": "chat.completion", "created": 1,
-                "model": "stub", "choices": [{"index": 0, "finish_reason": "tool_calls",
-                    "message": {"role": "assistant", "content": None, "tool_calls": [
-                        {"id": "c1", "type": "function", "function": {
-                            "name": "Read",
-                            "arguments": json.dumps({"file_path": target})}}]}}]})
+            return JSONResponse(selfcheck.turn1_read(target))
         # turn 2: did the gate inject the summary as a tool result?
-        saw = any(isinstance(m.get("content"), str) and "⟪keymd-summary:" in m["content"]
-                  for m in body.get("messages", []) if m.get("role") == "tool")
-        state["saw_summary"] = saw
-        return JSONResponse({"id": "u2", "object": "chat.completion", "created": 2,
-            "model": "stub", "choices": [{"index": 0, "finish_reason": "stop",
-                "message": {"role": "assistant",
-                            "content": "GATED" if saw else "NOGATE"}}]})
+        state["saw_summary"] = selfcheck.saw_summary(body.get("messages", []))
+        return JSONResponse(selfcheck.turn2_report(state["saw_summary"]))
 
     stub_app = Starlette(routes=[Route("/v1/chat/completions", upstream, methods=["POST"])])
 

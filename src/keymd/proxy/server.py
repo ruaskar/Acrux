@@ -27,10 +27,10 @@ from keymd.proxy.adapters.anthropic import AnthropicAdapter
 from keymd.proxy.adapters.openai import OpenAIAdapter
 from keymd.proxy.orchestrator import complete
 
-UPSTREAM_BASE = os.environ.get("KEYMD_UPSTREAM_BASE", "https://api.anthropic.com")
-OPENAI_BASE = os.environ.get("KEYMD_OPENAI_BASE", "https://api.openai.com")
 _FORWARD_HEADERS = ("x-api-key", "authorization", "anthropic-version",
                     "anthropic-beta", "content-type", "openai-organization")
+_DEFAULT_ANTHROPIC = "https://api.anthropic.com"
+_DEFAULT_OPENAI = "https://api.openai.com"
 
 
 async def _post(url: str, body: dict, headers: dict) -> dict:
@@ -45,12 +45,22 @@ async def _post(url: str, body: dict, headers: dict) -> dict:
         return r.json()
 
 
-async def forward_upstream(body: dict, headers: dict) -> dict:
-    return await _post(f"{UPSTREAM_BASE}/v1/messages", body, headers)
+def _anthropic_base(override: str | None) -> str:
+    # Resolved at CALL time (override > env > default) — NOT an import-time global,
+    # so `keymd serve`/`run`/`up` can set the upstream after this module imports.
+    return override or os.environ.get("KEYMD_UPSTREAM_BASE", _DEFAULT_ANTHROPIC)
 
 
-async def forward_openai(body: dict, headers: dict) -> dict:
-    return await _post(f"{OPENAI_BASE}/v1/chat/completions", body, headers)
+def _openai_base(override: str | None) -> str:
+    return override or os.environ.get("KEYMD_OPENAI_BASE", _DEFAULT_OPENAI)
+
+
+async def forward_upstream(body: dict, headers: dict, base: str | None = None) -> dict:
+    return await _post(f"{_anthropic_base(base)}/v1/messages", body, headers)
+
+
+async def forward_openai(body: dict, headers: dict, base: str | None = None) -> dict:
+    return await _post(f"{_openai_base(base)}/v1/chat/completions", body, headers)
 
 
 # --- SSE synthesis -----------------------------------------------------------
@@ -116,16 +126,19 @@ def _anthropic_sse(resp: dict):
     yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 
 
-def build_app(threshold: int = 400) -> Starlette:
+def build_app(threshold: int = 400, *, upstream: str | None = None,
+              openai_base: str | None = None) -> Starlette:
     async def anthropic_route(request: Request):
         body = await request.json()
         hdrs = dict(request.headers)
         wants_stream = bool(body.get("stream"))
 
-        async def upstream(b: dict) -> dict:
-            return await forward_upstream(b, hdrs)  # module global → monkeypatchable
+        async def up(b: dict) -> dict:  # calls the module-level fn → monkeypatchable;
+            # pass `base` only when set so existing 2-arg test fakes keep working.
+            return (await forward_upstream(b, hdrs) if upstream is None
+                    else await forward_upstream(b, hdrs, upstream))
 
-        result = await complete(body, AnthropicAdapter(), upstream, threshold=threshold)
+        result = await complete(body, AnthropicAdapter(), up, threshold=threshold)
         if wants_stream:
             return StreamingResponse(_anthropic_sse(result),
                                      media_type="text/event-stream")
@@ -136,10 +149,11 @@ def build_app(threshold: int = 400) -> Starlette:
         hdrs = dict(request.headers)
         wants_stream = bool(body.get("stream"))
 
-        async def upstream(b: dict) -> dict:
-            return await forward_openai(b, hdrs)
+        async def up(b: dict) -> dict:
+            return (await forward_openai(b, hdrs) if openai_base is None
+                    else await forward_openai(b, hdrs, openai_base))
 
-        result = await complete(body, OpenAIAdapter(), upstream, threshold=threshold)
+        result = await complete(body, OpenAIAdapter(), up, threshold=threshold)
         if wants_stream:
             return StreamingResponse(_openai_sse(result),
                                      media_type="text/event-stream")
@@ -151,6 +165,8 @@ def build_app(threshold: int = 400) -> Starlette:
     ])
 
 
-def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 400) -> None:
+def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 400,
+          *, upstream: str | None = None, openai_base: str | None = None) -> None:
     import uvicorn
-    uvicorn.run(build_app(threshold=threshold), host=host, port=port)
+    uvicorn.run(build_app(threshold=threshold, upstream=upstream, openai_base=openai_base),
+                host=host, port=port)
