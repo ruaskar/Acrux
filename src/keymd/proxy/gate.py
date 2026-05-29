@@ -46,22 +46,27 @@ def classify(call: ToolCall, *, summarized: set[str], threshold: int) -> Decisio
 
 
 def summarized_paths(messages: list) -> set[str]:
-    """Canonical paths for which a keymd summary already appears in the transcript."""
+    """Canonical paths for which a keymd summary already appears in the transcript.
+
+    Handles BOTH wire formats: Anthropic tool_result blocks (content is a list)
+    AND OpenAI tool messages ({"role":"tool","content":"<str>"}). Missing the
+    OpenAI str case re-gated the same file every inner turn on OpenAI hosts.
+    """
     found: set[str] = set()
     for m in messages:
         content = m.get("content")
-        blocks = content if isinstance(content, list) else []
-        for b in blocks:
-            if isinstance(b, dict) and b.get("type") == "tool_result":
-                c = b.get("content")
-                if isinstance(c, str):
-                    text = c
-                elif isinstance(c, list):
-                    text = " ".join(x.get("text", "") for x in c
-                                    if isinstance(x, dict))
-                else:
-                    text = ""
-                found.update(MARKER_RE.findall(text))
+        if isinstance(content, str):                       # OpenAI tool message
+            found.update(MARKER_RE.findall(content))
+        elif isinstance(content, list):                    # Anthropic blocks
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    c = b.get("content")
+                    if isinstance(c, str):
+                        found.update(MARKER_RE.findall(c))
+                    elif isinstance(c, list):
+                        for x in c:
+                            if isinstance(x, dict):
+                                found.update(MARKER_RE.findall(x.get("text", "")))
     return found
 
 

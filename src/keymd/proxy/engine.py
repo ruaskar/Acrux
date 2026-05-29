@@ -27,10 +27,9 @@ MAX_FULL_LINES = 800
 
 
 def canon(path: str) -> str:
-    """Canonical key matching build()'s resolved storage. realpath resolves
-    symlinks and normalizes to the on-disk case, so a model-supplied path
-    (relative, symlinked, or mis-cased) matches files.path."""
-    return os.path.realpath(path)
+    """Canonical key matching the index — delegates to config.canonical so all
+    faculties (build/query/refresh/sync/proxy/watcher) share ONE normalization."""
+    return config.canonical(path)
 
 
 def _index_ready() -> bool:
