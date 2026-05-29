@@ -5,8 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "keymd"
 version = "0.1.0"
-description = "Cross-framework token-saving enforcement layer: LLM-optimized .key.md sidecars + call-graph index"
+description = "Cross-framework token-saving enforcement layer: LLM-optimized .key.md sidecars + call-graph index + local enforcing proxy"
+readme = "README.md"
 requires-python = ">=3.11"
+authors = [{ name = "ruaskar" }]
+keywords = ["llm", "agents", "tokens", "proxy", "code-index", "tree-sitter"]
+classifiers = [
+    # Guard: makes PyPI/twine REJECT an upload. The repo is private/pre-release;
+    # going public later = remove this line + add a real license.
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.11",
+    "Intended Audience :: Developers",
+]
 dependencies = []
 
 [project.optional-dependencies]
@@ -14,6 +24,11 @@ dev = ["pytest>=8"]
 proxy = ["httpx>=0.27", "starlette>=0.37", "uvicorn>=0.30"]
 watch = ["watchdog>=4"]
 lang = ["tree-sitter>=0.25,<0.26", "tree-sitter-javascript>=0.23", "tree-sitter-typescript>=0.23"]
+all = ["httpx>=0.27", "starlette>=0.37", "uvicorn>=0.30", "watchdog>=4",
+       "tree-sitter>=0.25,<0.26", "tree-sitter-javascript>=0.23", "tree-sitter-typescript>=0.23"]
+
+[project.urls]
+Repository = "https://github.com/ruaskar/keymd"
 
 [project.scripts]
 keymd = "keymd.cli:main"

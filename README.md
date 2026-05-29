@@ -8,6 +8,25 @@ It is **not** "AI codebase docs." The defensible combination it ships, that noth
 
 > per-file, git-committed sidecars · a **deterministic AST-structure** section regenerated with no LLM · **served and enforced on every read** by a local proxy · backed by a **live incremental call-graph** index.
 
+## Quickstart (one command)
+
+```bash
+pip install keymd[all]
+cd your-project
+keymd run -- claude        # build index + serve + wire base-url + launch the agent through keymd
+```
+
+`keymd run -- <agent>` builds the index, starts the local proxy, injects the base-URL env
+vars, and execs your agent **through** keymd (cleanup on exit). Works for any agent that
+reads its endpoint from `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` (Claude Code, Codex, Aider,
+OpenAI-compatible CLIs).
+
+For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): run
+`keymd up` (zero-config build + serve + prints the one line) and point the framework's
+`base_url` at it. Verify anytime with `keymd doctor --wire` (no API spend).
+
+> If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
+
 ## Why local-proxy enforcement (not MCP, not a cloud service)
 
 - **More enforceable than MCP.** MCP only *offers* a tool the agent may ignore; the proxy sits on the one path every token must cross to reach the model, so the summary is *guaranteed* to land before the expensive read.
