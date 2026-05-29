@@ -34,6 +34,8 @@ It is **not** "AI codebase docs." The defensible combination it ships, that noth
 pip install -e ".[dev,proxy,watch,lang]"   # engine is dependency-free; extras add proxy/watcher/JS-TS
 ```
 
+> If `keymd` isn't found after install (common with Microsoft Store / `pip --user` Python, whose Scripts dir isn't on PATH), use the PATH-independent form **`python -m keymd ...`** in place of `keymd ...` everywhere below, or add your Python user-Scripts dir to PATH. A virtualenv avoids the issue entirely.
+
 ## Use the engine (works today, fully offline)
 
 ```bash
