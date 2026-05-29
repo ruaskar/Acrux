@@ -135,3 +135,24 @@ def test_doctor_passes_after_build(tmp_path, monkeypatch, capsys):
     rc = ob.doctor()
     assert rc == 0
     assert "✓" in capsys.readouterr().out
+
+
+# --- Task R5: ide wiring helper --------------------------------------------
+
+def test_ide_specific_tool(capsys):
+    assert ob.ide("claude-code") == 0
+    out = capsys.readouterr().out
+    assert "ANTHROPIC_BASE_URL" in out
+
+
+def test_ide_all_lists_frameworks(capsys):
+    assert ob.ide() == 0
+    out = capsys.readouterr().out.lower()
+    for t in ("claude-code", "codex", "cline", "openclaw", "hermes"):
+        assert t in out
+    assert "wire format" in out  # model-agnostic note
+
+
+def test_ide_unknown_tool(capsys):
+    assert ob.ide("nope-xyz") == 1
+    assert "unknown tool" in capsys.readouterr().out.lower()
