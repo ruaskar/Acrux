@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "serve":
         from keymd.proxy import server  # lazy: proxy extra deps only needed here
         print(f"keymd proxy on http://{a.host}:{a.port} "
-              f"(threshold={a.threshold} loc) → {server.UPSTREAM_BASE}")
+              f"(threshold={a.threshold} loc)")
         server.serve(host=a.host, port=a.port, threshold=a.threshold)
     elif a.cmd == "guard":
         from keymd.guardrails import cli as gcli
