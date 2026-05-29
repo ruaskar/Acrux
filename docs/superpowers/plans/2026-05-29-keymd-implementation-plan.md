@@ -2324,6 +2324,8 @@ class Debouncer:
 
 # Phase 3 — Enforcing Proxy  *(detailed design + task spec — the novel core)*
 
+> **▶ Full-TDD expansion: [`2026-05-29-keymd-phase3-proxy.md`](2026-05-29-keymd-phase3-proxy.md)** (Phase 3a = Anthropic + gate loop, line-complete TDD against a mock upstream; Phase 3b = OpenAI + streaming + cache-safe blob redirect). The overview below remains the design rationale.
+
 > **This phase is a sub-project.** It is specified to task granularity with key code for the riskiest pieces, but — like Phase 1 — it should be **written out to full TDD and run through its own adversarial review before execution.** The three hard parts (prompt-cache safety, tool-virtualization fidelity, dual wire formats) are where correctness is won or lost; do not treat the sketches below as line-complete.
 
 **Goal:** a localhost reverse-proxy that the agent's LLM endpoint points at (`ANTHROPIC_BASE_URL` / OpenAI-compatible `base_url`). It forwards to the real upstream with the user's key and, in-flight: (a) **gates** full reads/mass-greps of indexed files behind the `.key.md`, (b) exposes **virtual `keymd_*` tools** answered from the Phase-1 `query` API, (c) **redirects** oversized file blobs in context to summaries, (d) **caps** oversized tool-results. Local-only; no third party.
