@@ -1,4 +1,30 @@
-# keymd Index Engine (Plan 1) Implementation Plan
+# keymd Implementation Plan (consolidated, phased)
+
+> **One consolidated plan, executed phase-by-phase with a review checkpoint between phases.** Phase 1 (Index Engine) is fully detailed below; Phases 2–5 follow the same **Shared Contracts** (next section) so interfaces don't drift across phases. Supersedes the earlier standalone "Plan 1 / index-engine" filename.
+
+**Product goal:** a local-only, cross-framework token-saving enforcement layer — a localhost proxy that gates full file reads behind LLM-optimized `.key.md` sidecars, backed by a live call-graph index. Full design: `docs/superpowers/specs/2026-05-29-keymd-token-saver-design.md`.
+
+## Shared Contracts (all phases depend on these — change them HERE, never inside a phase)
+
+These are the frozen interfaces. Any phase that needs to alter one must update this section first and re-check downstream phases.
+
+- **Env / paths:** `KEYMD_PROJECT_ROOT` → git toplevel → cwd; index at `KEYMD_INDEX_PATH` or `<root>/.keymd/index.db`; source roots via `KEYMD_INDEX_DIRS` or auto-discover; excludes via `KEYMD_EXCLUDE_PATTERNS`.
+- **DB schema (Phase 1, Task 4):** `files(path,lang,sha256,mtime,line_count,has_keymd,indexed_at)` · `symbols(path,name,kind,line,signature)` · `edges(from_path,from_name,to_name,to_path,kind,line)` · `keymds(path,src_path,sha256,auto_refreshed_at)` · `keymd_fts(path UNINDEXED, content)`.
+- **Parser interface (Phase 1, Task 5):** `Parser.parse(path) -> ParseResult{ symbols:[Symbol(name,kind,line,signature)], edges:[Edge(from_name,to_name,kind,line)], line_count:int }`; registered by file extension; `get_parser_for(path)`.
+- **Engine query API (consumed by Proxy + Watcher + CLI):** `query.callers(symbol)` · `query.callees(path)->[(to_name,relpath)]` · `query.symbols(path)->[(name,kind,line)]` · `query.impact(path)->{path,per_symbol,unique_files}` · `query.search(text,limit)->[(relpath,snippet)]` · `query.stats()`. Heuristic: `graph.callers_for_symbol(cur,sym,defining_path,defining_stem)->set[str]`.
+- **Sidecar contract:** whole-file machine-generated, **no human region**; `render_keymd(con,src_path)->str`; idempotent modulo the `refreshed:` line via `strip_timestamp`.
+- **Engine entrypoints for later phases:** `index.build(verbose)->dict` · `refresh.refresh_one(src_path)->bool` · `sync_one.sync_one(src_path)->None`.
+
+### Phase roadmap (status)
+1. **Index Engine** — fully detailed below (Tasks 1–15).
+2. **FS Watcher** — debounced `sync_one` on source writes + FTS refresh on sidecar writes. *(outline at end; detailed after Phase 1 review)*
+3. **Enforcing Proxy** — asyncio reverse-proxy (Anthropic + OpenAI wire formats), virtual `keymd_*` tools over the query API, pre-read gate with `:full` escalation, deterministic prompt-cache-safe rewrite. *(outline)*
+4. **Host integration + A/B benchmark** — Claude Code / Codex / Cline setup, `AGENTS.md`, paired-subagent token benchmark. *(outline)*
+5. **v1.1** — portable guardrails module + `/handoff` session-compaction. *(outline)*
+
+---
+
+# Phase 1 — Index Engine
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -2033,9 +2059,9 @@ git commit -m "test: end-to-end build→sidecar→query flow"
 
 ---
 
-## Roadmap — subsequent plans (written after Plan 1 lands)
+## Phases 2–5 — outline (detailed in this same document after the Phase 1 review checkpoint)
 
-- **Plan 1b — JS/TS parsers:** `parsers/javascript.py` + `parsers/typescript.py` behind the Task-5 `Parser` interface, using `tree-sitter` + `tree-sitter-language-pack`. **Pinned API (verified May 2026):** `from tree_sitter_language_pack import get_parser`; parse `bytes`; queries use `tree_sitter.Query(language, src)` + `QueryCursor(query).captures(root)` returning `{capture_name: [nodes]}` (the `Query.captures()` method was removed at 0.25.x). Add per-language collision sets analogous to `STDLIB_STEMS`. Pin `tree-sitter>=0.25,<0.26`.
+- **Phase 1b — JS/TS parsers:** `parsers/javascript.py` + `parsers/typescript.py` behind the Task-5 `Parser` interface, using `tree-sitter` + `tree-sitter-language-pack`. **Pinned API (verified May 2026):** `from tree_sitter_language_pack import get_parser`; parse `bytes`; queries use `tree_sitter.Query(language, src)` + `QueryCursor(query).captures(root)` returning `{capture_name: [nodes]}` (the `Query.captures()` method was removed at 0.25.x). Add per-language collision sets analogous to `STDLIB_STEMS`. Pin `tree-sitter>=0.25,<0.26`.
 - **Plan 2 — FS watcher:** debounced watcher (`watchdog`) that calls `sync_one` on source writes and re-indexes changed `.key.md` into FTS; daemonizable.
 - **Plan 3 — Enforcing proxy:** asyncio reverse-proxy (Anthropic + OpenAI wire formats, SSE), virtual `keymd_*` tools answered from this engine's `query` API, pre-read gate with `:full` escalation, deterministic rewrite for prompt-cache safety, output-cap. The hard core.
 - **Plan 4 — Host integration + A/B benchmark:** per-host setup (Claude Code `ANTHROPIC_BASE_URL`, Codex, Cline), `AGENTS.md` snippet, and the paired-subagent token benchmark on a public repo.
