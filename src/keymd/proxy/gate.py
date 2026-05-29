@@ -54,6 +54,9 @@ def summarized_paths(messages: list) -> set[str]:
     """
     found: set[str] = set()
     for m in messages:
+        out = m.get("output")
+        if isinstance(out, str):                           # Responses function_call_output
+            found.update(MARKER_RE.findall(out))
         content = m.get("content")
         if isinstance(content, str):                       # OpenAI tool message
             found.update(MARKER_RE.findall(content))
