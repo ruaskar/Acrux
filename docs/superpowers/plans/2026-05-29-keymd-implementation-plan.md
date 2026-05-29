@@ -22,6 +22,17 @@ These are the frozen interfaces. Any phase that needs to alter one must update t
 4. **Host integration + A/B benchmark** — Claude Code / Codex / Cline setup, `AGENTS.md`, paired-subagent token benchmark. *(outline)*
 5. **v1.1** — portable guardrails module + `/handoff` session-compaction. *(outline)*
 
+### As-built reconciliation (after end-to-end adversarial review, 2026-05-30)
+
+The project was built, then reviewed end-to-end by 4 parallel agents (plan-adherence, interaction, usability, correctness) that **ran** the code. Deltas vs this plan + fixes applied (committed; 81 tests green):
+
+- **Phase 2 watcher relocated** to `src/keymd/watcher/` (top-level faculty per design §8), not `engine/watcher/`; tests import `keymd.watcher.*`. `keymd watch` **is** wired into the CLI (review caught it was initially dropped).
+- **Phase 1b shipped as one `parsers/treesitter.py`** using official `tree-sitter-javascript`/`-typescript` wheels + recursive-descent (the planned `tree-sitter-language-pack` ships a `builtins.Node` ABI incompatible with `tree_sitter` 0.25). Planned `JS_TS_GLOBALS` collision set **deferred** (JS/TS caller-graph is best-effort).
+- **Phase 3 OpenAI adapter + `/v1/chat/completions` route SHIPPED** (orchestrator is adapter-agnostic); SSE streaming to a live host + Responses API remain deferred.
+- **Unified path canonicalization** (`config.canonical` = realpath) now used by EVERY faculty — closed the abspath-vs-realpath split (silent gate no-op + duplicate-row corruption under mis-cased/symlinked paths) the review reproduced.
+- **Parser registration** centralized in `parsers/__init__` so `index.build()` works in any process (was a `cli.py`-only import side effect → `symbols=0` elsewhere).
+- **First-run fixes:** `refresh`/watcher update `keymd_fts`; flat-repo top-level files indexed; UTF-8 stdout; `guard install` bakes the absolute interpreter; `python -m keymd` entry point; `query.*` close connections on error paths; `check-push` strips the branch.
+
 ---
 
 # Phase 1 — Index Engine

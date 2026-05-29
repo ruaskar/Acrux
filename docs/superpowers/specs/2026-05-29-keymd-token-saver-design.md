@@ -166,3 +166,10 @@ keymd/
 - Final name + GitHub org/visibility for the public repo.
 - Whether the LLM semantic-digest pipeline ships in v1 (currently v2) given it's off-by-default anyway.
 - Exact `.key.md` on-disk format (markdown-ish vs a more compact encoding) — pin during implementation with a token-density micro-benchmark.
+
+## 12. As-built reconciliation (2026-05-30) — spec vs shipped surface
+
+The implementation reconciled two §3/§6/§9 items differently (both decided in the implementation plan; recording here so this design-of-record matches the code):
+- **`keymd_symbol` → `keymd_read_full`.** The full-source escalation tool shipped as `keymd_read_full(path)` (project-root-confined, line-capped). A symbol-granular `keymd_symbol` needs per-symbol end-line tracking in the parser/schema and is deferred to Phase 3b.
+- **`keymd handoff` CLI → Phase 5 template.** Handoff ships as `templates/handoff.md` (a host slash-command) rather than a `keymd` CLI subcommand, since session compaction is host-side, not engine-side.
+- The shipped v1 CLI is `build | refresh | sync | callers | callees | symbols | impact | search | missing-keymds | stats | serve | watch | guard`.
