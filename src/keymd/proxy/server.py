@@ -1,23 +1,26 @@
 """server.py — Starlette ASGI shell exposing the gated proxy.
 
-Two routes, both NON-STREAMING (Phase 3b core):
+Two routes:
   POST /v1/messages          → Anthropic Messages  (AnthropicAdapter)
   POST /v1/chat/completions  → OpenAI Chat Compl.   (OpenAIAdapter)
 
 The proxy's own upstream calls are always non-streamed (it must read whole
-responses to run the gate loop). SSE passthrough for a streaming HOST is a
-Phase-4 live-integration item — until then, point the host at the proxy in
-non-streaming mode. (A streaming host will receive JSON; that's the documented
-boundary, not a silent failure.)
+responses to run the gate loop). When the HOST requests stream:true, the gate
+runs buffered and the final response is SYNTHESIZED into a protocol-valid SSE
+stream (see _openai_sse / _anthropic_sse) so streaming clients (e.g. Hermes
+Agent) work without erroring/hanging. Caveat: this is buffered-then-streamed,
+NOT token-by-token — the whole answer arrives in one delta after the (possibly
+multi-turn) gate completes. True incremental relay is a future refinement.
 """
 from __future__ import annotations
 
+import json
 import os
 
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from keymd.proxy.adapters.anthropic import AnthropicAdapter
@@ -50,25 +53,96 @@ async def forward_openai(body: dict, headers: dict) -> dict:
     return await _post(f"{OPENAI_BASE}/v1/chat/completions", body, headers)
 
 
+# --- SSE synthesis -----------------------------------------------------------
+# The gate loop must read whole (non-streamed) responses, so when the HOST asked
+# for stream:true we run the loop buffered and then SYNTHESIZE a valid SSE stream
+# from the final response. This is NOT token-by-token — the whole answer arrives
+# in one delta after the gate completes — but it is a protocol-valid stream a
+# streaming client (e.g. Hermes Agent) consumes without erroring/hanging.
+
+def _openai_sse(resp: dict):
+    base = {"id": resp.get("id", "chatcmpl-keymd"), "object": "chat.completion.chunk",
+            "created": resp.get("created", 0), "model": resp.get("model", "")}
+    choice = (resp.get("choices") or [{}])[0]
+    msg = choice.get("message", {}) or {}
+    finish = choice.get("finish_reason", "stop")
+
+    def chunk(delta, fr=None):
+        c = dict(base)
+        c["choices"] = [{"index": 0, "delta": delta, "finish_reason": fr}]
+        return f"data: {json.dumps(c)}\n\n"
+
+    yield chunk({"role": "assistant"})
+    if msg.get("content"):
+        yield chunk({"content": msg["content"]})
+    for i, tc in enumerate(msg.get("tool_calls") or []):
+        fn = tc.get("function", {}) or {}
+        yield chunk({"tool_calls": [{"index": i, "id": tc.get("id"), "type": "function",
+                                     "function": {"name": fn.get("name"),
+                                                  "arguments": fn.get("arguments", "")}}]})
+    yield chunk({}, fr=finish)
+    yield "data: [DONE]\n\n"
+
+
+def _anthropic_sse(resp: dict):
+    meta = {k: v for k, v in resp.items() if k != "content"}
+    meta.setdefault("type", "message")
+    meta.setdefault("role", "assistant")
+    meta["content"] = []
+    yield ("event: message_start\n"
+           f"data: {json.dumps({'type': 'message_start', 'message': meta})}\n\n")
+    for i, block in enumerate(resp.get("content") or []):
+        if block.get("type") == "text":
+            cb = {"type": "text", "text": ""}
+            d = {"type": "text_delta", "text": block.get("text", "")}
+        elif block.get("type") == "tool_use":
+            cb = {"type": "tool_use", "id": block.get("id"),
+                  "name": block.get("name"), "input": {}}
+            d = {"type": "input_json_delta",
+                 "partial_json": json.dumps(block.get("input", {}))}
+        else:
+            continue
+        yield ("event: content_block_start\n"
+               f"data: {json.dumps({'type': 'content_block_start', 'index': i, 'content_block': cb})}\n\n")
+        yield ("event: content_block_delta\n"
+               f"data: {json.dumps({'type': 'content_block_delta', 'index': i, 'delta': d})}\n\n")
+        yield ("event: content_block_stop\n"
+               f"data: {json.dumps({'type': 'content_block_stop', 'index': i})}\n\n")
+    md = {"type": "message_delta",
+          "delta": {"stop_reason": resp.get("stop_reason", "end_turn"),
+                    "stop_sequence": None},
+          "usage": resp.get("usage", {})}
+    yield f"event: message_delta\ndata: {json.dumps(md)}\n\n"
+    yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
+
+
 def build_app(threshold: int = 400) -> Starlette:
-    async def anthropic_route(request: Request) -> JSONResponse:
+    async def anthropic_route(request: Request):
         body = await request.json()
         hdrs = dict(request.headers)
+        wants_stream = bool(body.get("stream"))
 
         async def upstream(b: dict) -> dict:
             return await forward_upstream(b, hdrs)  # module global → monkeypatchable
 
         result = await complete(body, AnthropicAdapter(), upstream, threshold=threshold)
+        if wants_stream:
+            return StreamingResponse(_anthropic_sse(result),
+                                     media_type="text/event-stream")
         return JSONResponse(result)
 
-    async def openai_route(request: Request) -> JSONResponse:
+    async def openai_route(request: Request):
         body = await request.json()
         hdrs = dict(request.headers)
+        wants_stream = bool(body.get("stream"))
 
         async def upstream(b: dict) -> dict:
             return await forward_openai(b, hdrs)
 
         result = await complete(body, OpenAIAdapter(), upstream, threshold=threshold)
+        if wants_stream:
+            return StreamingResponse(_openai_sse(result),
+                                     media_type="text/event-stream")
         return JSONResponse(result)
 
     return Starlette(routes=[
