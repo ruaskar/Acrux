@@ -25,3 +25,42 @@ def test_sync_one_reindexes_and_refreshes(env_proj):
         Path(parser_py).write_text(src, encoding="utf-8")  # restore fixture
         if key.exists():
             key.unlink()
+
+
+def test_sync_one_clears_stale_incoming_pointer_on_rename(tmp_path, monkeypatch):
+    # Renaming a symbol must not leave another file's resolved call edge pointing
+    # at this file for the old name (the original sync_one's "Step 1" invalidation).
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / ".keymd" / "index.db"))
+    from keymd.engine import config as c
+    c.project_pkg_prefixes.cache_clear()
+    c._git_toplevel.cache_clear()
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    a = pkg / "a.py"
+    b = pkg / "b.py"
+    a.write_text("def foo():\n    return 1\n", encoding="utf-8")
+    b.write_text("from pkg.a import foo\n\n\ndef use():\n    return foo()\n",
+                 encoding="utf-8")
+    index.build(verbose=False)
+    sp_a = config.canonical(str(a))
+    sp_b = config.canonical(str(b))
+
+    con = db.connect(config.index_path())
+    row = con.execute("SELECT to_path FROM edges WHERE from_path=? AND to_name='foo' "
+                      "AND kind='call'", (sp_b,)).fetchone()
+    con.close()
+    assert row is not None and row[0] == sp_a    # b.foo() resolved into a.py
+
+    a.write_text("def bar():\n    return 1\n", encoding="utf-8")   # rename foo -> bar
+    sync_one.sync_one(str(a))
+
+    con = db.connect(config.index_path())
+    row = con.execute("SELECT to_path FROM edges WHERE from_path=? AND to_name='foo' "
+                      "AND kind='call'", (sp_b,)).fetchone()
+    con.close()
+    c.project_pkg_prefixes.cache_clear()
+    c._git_toplevel.cache_clear()
+    # the now-gone 'foo' must NOT still resolve to a.py (no dangling pointer)
+    assert row is None or row[0] != sp_a
