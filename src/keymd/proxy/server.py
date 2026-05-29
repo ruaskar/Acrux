@@ -25,6 +25,7 @@ from starlette.routing import Route
 
 from keymd.proxy.adapters.anthropic import AnthropicAdapter
 from keymd.proxy.adapters.openai import OpenAIAdapter
+from keymd.proxy.adapters.responses import ResponsesAdapter
 from keymd.proxy.orchestrator import complete
 
 _FORWARD_HEADERS = ("x-api-key", "authorization", "anthropic-version",
@@ -67,6 +68,10 @@ async def forward_count_tokens(body: dict, headers: dict, base: str | None = Non
     # Claude Code calls this for context management; pure passthrough (no file
     # reads to gate), so a proper Anthropic gateway must expose it or CC 404s.
     return await _post(f"{_anthropic_base(base)}/v1/messages/count_tokens", body, headers)
+
+
+async def forward_responses(body: dict, headers: dict, base: str | None = None) -> dict:
+    return await _post(f"{_openai_base(base)}/v1/responses", body, headers)
 
 
 # --- SSE synthesis -----------------------------------------------------------
@@ -132,6 +137,61 @@ def _anthropic_sse(resp: dict):
     yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
 
 
+def _responses_sse(resp: dict):
+    """Synthesize the OpenAI Responses typed-event SSE from a buffered final
+    response (created → output items → completed). One delta per item, not
+    token-by-token, but a protocol-valid stream."""
+    seq = 0
+
+    def ev(etype: str, payload: dict) -> str:
+        nonlocal seq
+        out = {**payload, "type": etype, "sequence_number": seq}
+        seq += 1
+        return f"event: {etype}\ndata: {json.dumps(out)}\n\n"
+
+    base_resp = {k: v for k, v in resp.items() if k != "output"}
+    base_resp.setdefault("id", "resp_keymd")
+    base_resp.setdefault("object", "response")
+    in_progress = {**base_resp, "status": "in_progress", "output": []}
+    yield ev("response.created", {"response": in_progress})
+    yield ev("response.in_progress", {"response": in_progress})
+
+    for idx, item in enumerate(resp.get("output") or []):
+        itype = item.get("type")
+        iid = item.get("id", f"item_{idx}")
+        if itype == "message":
+            yield ev("response.output_item.added",
+                     {"output_index": idx, "item": {**item, "content": []}})
+            text = "".join(p.get("text", "") for p in item.get("content", [])
+                           if p.get("type") == "output_text")
+            yield ev("response.content_part.added",
+                     {"item_id": iid, "output_index": idx, "content_index": 0,
+                      "part": {"type": "output_text", "text": ""}})
+            yield ev("response.output_text.delta",
+                     {"item_id": iid, "output_index": idx, "content_index": 0,
+                      "delta": text})
+            yield ev("response.output_text.done",
+                     {"item_id": iid, "output_index": idx, "content_index": 0,
+                      "text": text})
+            yield ev("response.content_part.done",
+                     {"item_id": iid, "output_index": idx, "content_index": 0,
+                      "part": {"type": "output_text", "text": text}})
+            yield ev("response.output_item.done", {"output_index": idx, "item": item})
+        elif itype == "function_call":
+            args = item.get("arguments", "") or ""
+            yield ev("response.output_item.added",
+                     {"output_index": idx, "item": {**item, "arguments": ""}})
+            yield ev("response.function_call_arguments.delta",
+                     {"item_id": iid, "output_index": idx, "delta": args})
+            yield ev("response.function_call_arguments.done",
+                     {"item_id": iid, "output_index": idx, "arguments": args})
+            yield ev("response.output_item.done", {"output_index": idx, "item": item})
+
+    yield ev("response.completed",
+             {"response": {**base_resp, "status": "completed",
+                           "output": resp.get("output", [])}})
+
+
 def build_app(threshold: int = 400, *, upstream: str | None = None,
               openai_base: str | None = None) -> Starlette:
     async def anthropic_route(request: Request):
@@ -173,10 +233,26 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
                   else await forward_count_tokens(body, hdrs, upstream))
         return JSONResponse(result)
 
+    async def responses_route(request: Request):
+        body = await request.json()
+        hdrs = dict(request.headers)
+        wants_stream = bool(body.get("stream"))
+
+        async def up(b: dict) -> dict:
+            return (await forward_responses(b, hdrs) if openai_base is None
+                    else await forward_responses(b, hdrs, openai_base))
+
+        result = await complete(body, ResponsesAdapter(), up, threshold=threshold)
+        if wants_stream:
+            return StreamingResponse(_responses_sse(result),
+                                     media_type="text/event-stream")
+        return JSONResponse(result)
+
     return Starlette(routes=[
         Route("/v1/messages/count_tokens", count_tokens_route, methods=["POST"]),
         Route("/v1/messages", anthropic_route, methods=["POST"]),
         Route("/v1/chat/completions", openai_route, methods=["POST"]),
+        Route("/v1/responses", responses_route, methods=["POST"]),
     ])
 
 
