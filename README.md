@@ -27,6 +27,35 @@ For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): 
 
 > If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
 
+## Use keymd from your IDE or framework (attach mode)
+
+IDE agents (Claude Code in VS Code, Codex, Cline, Continue, Cursor) and config-file
+frameworks aren't launched by keymd, so instead of `keymd run` you **attach**: start the
+proxy once and point the tool's own base-URL at it.
+
+```bash
+keymd up        # build + serve; leave it running in a spare terminal
+keymd ide       # print the exact wiring for every supported tool (or: keymd ide codex)
+```
+
+keymd routes by **wire format, not model** — it serves the Anthropic (`/v1/messages`,
+`/v1/messages/count_tokens`) *and* OpenAI (`/v1/chat/completions`, `/v1/responses`) APIs,
+so any model behind an OpenAI/Anthropic-compatible endpoint (GPT, Claude, Hermes, Qwen,
+Llama via vLLM / Ollama / LM Studio / LiteLLM) works.
+
+| Tool | Wire | Where to point it (base = `http://localhost:8787`) |
+|---|---|---|
+| **Claude Code** (VS Code/CLI/JetBrains) | Anthropic | `~/.claude/settings.json` → `"env": {"ANTHROPIC_BASE_URL": "<base>"}`; restart |
+| **Codex** | OpenAI | `~/.codex/config.toml` named provider → `base_url="<base>/v1"`, `wire_api="chat"` **or** `"responses"` (both supported) |
+| **Cline** | OpenAI | Settings → "OpenAI Compatible" → Base URL `<base>/v1` |
+| **Continue.dev** | OpenAI | `config.yaml` → `provider: openai`, `apiBase: <base>/v1` |
+| **Cursor / Roo** | OpenAI | Override OpenAI Base URL → `<base>/v1` |
+| **OpenClaw** | OpenAI | `models.providers.<id>.baseUrl = <base>/v1` |
+| **Hermes Agent** | OpenAI/Anthropic | `base_url = <base>` (Anthropic) or `<base>/v1` (OpenAI); forces streaming → handled |
+
+Auth flows through transparently — each tool keeps sending its own key; keymd forwards it
+upstream untouched. Verify with `keymd doctor --wire`.
+
 ## Why local-proxy enforcement (not MCP, not a cloud service)
 
 - **More enforceable than MCP.** MCP only *offers* a tool the agent may ignore; the proxy sits on the one path every token must cross to reach the model, so the summary is *guaranteed* to land before the expensive read.
@@ -59,7 +88,7 @@ Setup:
 ```bash
 keymd build                                            # index your repo (gate files > --threshold loc)
 export KEYMD_OPENAI_BASE=http://your-llm:8000          # or KEYMD_UPSTREAM_BASE for an Anthropic endpoint
-keymd serve --port 8787 --threshold 400                # set env BEFORE serve (read at import)
+keymd serve --port 8787 --threshold 400                # serve reads env per request (or use `keymd up --upstream …`)
 # in your framework: base_url → http://localhost:8787, keep your own API key
 ```
 

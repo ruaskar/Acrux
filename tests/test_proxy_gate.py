@@ -32,6 +32,14 @@ def test_summarized_paths_from_transcript():
     assert "/abs/parser.py" in gate.summarized_paths(msgs)
 
 
+def test_summarized_paths_responses_function_call_output():
+    # OpenAI Responses wire: tool result is a function_call_output item whose text
+    # lives under "output" (not "content"). Missing this re-gates every inner turn.
+    msgs = [{"type": "function_call_output", "call_id": "c1",
+             "output": "⟪keymd-summary:/abs/foo.py⟫\n# foo..."}]
+    assert "/abs/foo.py" in gate.summarized_paths(msgs)
+
+
 def test_summary_result_marker_and_deterministic(env_proj):
     index.build(verbose=False)
     canon = engine.canon(str(Path(env_proj) / "pkg" / "parser.py"))
