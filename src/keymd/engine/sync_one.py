@@ -38,9 +38,10 @@ def sync_one(src_path: str) -> None:
     if parser is None or not p.exists():
         return
     con = db.connect(db_path)
-    # Absolute path the index keys on (build() stores absolute paths); a relative
-    # arg would DELETE nothing then re-INSERT an orphan row.
-    sp = os.path.abspath(src_path)
+    # Canonical key the index uses (realpath: symlink + case). A mis-cased or
+    # symlinked arg under os.path.abspath would DELETE nothing then re-INSERT a
+    # DUPLICATE corrupt row; config.canonical keeps build/query/sync aligned.
+    sp = config.canonical(src_path)
 
     # capture dependents BEFORE we mutate edges (so a removed call still cascades)
     dependents = set(_dependents(con, sp))

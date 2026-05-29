@@ -31,10 +31,10 @@ def refresh_one(src_path: str) -> bool:
     p = Path(src_path)
     if not p.exists() or get_parser_for(p) is None:
         return False
-    # Normalize to the absolute path the index keys on. build() stores absolute
-    # paths and query.* use os.path.abspath; without this a relative CLI arg
-    # like `src/foo.py` matches zero rows and renders an empty sidecar.
-    abs_src = os.path.abspath(src_path)
+    # Canonical key the index uses (realpath: resolves symlinks + case), so a
+    # relative/mis-cased CLI arg matches the stored rows instead of writing an
+    # orphan. Shared with build/query/sync/proxy/watcher via config.canonical.
+    abs_src = config.canonical(src_path)
     if not _confined(abs_src):
         return False
     key_path = Path(abs_src[:-len(p.suffix)] + ".key.md")
@@ -63,6 +63,12 @@ def refresh_one(src_path: str) -> bool:
             "INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
             "auto_refreshed_at) VALUES (?, ?, ?, ?)",
             (str(key_path), abs_src, sha, time.time()))
+        # Keep FTS current: build() only fills keymd_fts from sidecars that
+        # already existed, so without this `keymd search` stays empty after the
+        # first build → refresh flow.
+        con.execute("DELETE FROM keymd_fts WHERE path=?", (str(key_path),))
+        con.execute("INSERT INTO keymd_fts(path, content) VALUES (?, ?)",
+                    (str(key_path), new_content))
         con.commit()
         con.close()
     except sqlite3.Error:

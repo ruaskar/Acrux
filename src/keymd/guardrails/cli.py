@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from keymd.guardrails import checks
@@ -9,7 +10,7 @@ from keymd.guardrails import checks
 
 def run(action: str, rest: list[str]) -> int:
     if action == "check-push":
-        branch = rest[0] if rest else ""
+        branch = (rest[0] if rest else "").strip()
         if checks.is_protected_push(branch):
             print(f"[keymd guard] refusing push to protected branch '{branch}' "
                   f"(set KEYMD_PROTECTED_BRANCHES to change). Use a PR.")
@@ -37,11 +38,16 @@ def run(action: str, rest: list[str]) -> int:
             return 1
         hooks.mkdir(parents=True, exist_ok=True)
         pre_push = hooks / "pre-push"
+        # Bake the absolute interpreter that ran `install` (not bare `keymd`),
+        # so the hook can't fail closed with 'command not found' (exit 127) and
+        # block EVERY push when keymd isn't on the hook's PATH. The script's
+        # exit = check-push's exit (0 allow / 1 protected), so no `|| exit 1`.
+        py = sys.executable.replace("\\", "/")
         pre_push.write_text(
             "#!/bin/sh\n"
             "# keymd guard: block pushes to protected branches\n"
             "branch=$(git rev-parse --abbrev-ref HEAD)\n"
-            'keymd guard check-push "$branch" || exit 1\n',
+            f'"{py}" -m keymd.cli guard check-push "$branch"\n',
             encoding="utf-8")
         try:
             os.chmod(pre_push, 0o755)

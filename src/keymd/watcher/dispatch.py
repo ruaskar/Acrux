@@ -37,7 +37,7 @@ def on_change(path: str) -> None:
     """Single entry point. Canonicalizes to the index's resolved key first."""
     if not config.index_path().exists():
         return
-    path = os.path.realpath(path)
+    path = config.canonical(path)
     if path.endswith(".key.md"):
         _reindex_keymd(path)
     elif get_parser_for(Path(path)) is not None:

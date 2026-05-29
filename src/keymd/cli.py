@@ -11,6 +11,14 @@ from keymd.engine import index, query, refresh, sync_one
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The .key.md / search output uses non-ASCII glyphs; force UTF-8 on stdout
+    # so `keymd search` / `build` don't crash on a non-UTF-8 Windows console.
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     p = argparse.ArgumentParser(prog="keymd")
     sp = p.add_subparsers(dest="cmd", required=True)
 
@@ -32,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     gd = sp.add_parser("guard")
     gd.add_argument("action", choices=["check-push", "check-dup", "install"])
     gd.add_argument("rest", nargs="*")
+    wt = sp.add_parser("watch")
+    wt.add_argument("--delay", type=float, default=0.6)
 
     a = p.parse_args(argv)
 
@@ -82,6 +92,14 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "guard":
         from keymd.guardrails import cli as gcli
         return gcli.run(a.action, a.rest)
+    elif a.cmd == "watch":
+        from keymd.engine import config
+        from keymd.watcher import run
+        try:
+            run.serve(root=str(config.project_root()), delay=a.delay)
+        except ImportError:  # watchdog imported lazily inside build_observer
+            print("keymd watch needs watchdog: pip install 'keymd[watch]'")
+            return 1
     return 0
 
 

@@ -56,11 +56,20 @@ def _env_path(name: str) -> Path | None:
 def project_root() -> Path:
     p = _env_path("KEYMD_PROJECT_ROOT")
     if p:
-        return p.resolve()
+        return Path(os.path.realpath(p))
     gt = _git_toplevel()
     if gt:
-        return gt
-    return Path.cwd()
+        return Path(os.path.realpath(gt))
+    return Path(os.path.realpath(Path.cwd()))
+
+
+def canonical(path: str | Path) -> str:
+    """The single canonical path key used by EVERY faculty — build, query,
+    refresh, sync_one, the proxy, and the watcher. realpath resolves symlinks
+    AND normalizes on-disk case, so a path keyed by one faculty is always found
+    by another regardless of casing, relative form, or symlinked roots.
+    (os.path.abspath does NOT case-normalize, which silently split the faculties.)"""
+    return os.path.realpath(path)
 
 
 def index_path() -> Path:

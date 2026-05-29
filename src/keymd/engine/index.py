@@ -20,25 +20,56 @@ def _file_sha(path: Path) -> str:
 
 def iter_source_files():
     exts = config.index_extensions()
+    seen: set[str] = set()
+
+    def _ok(p) -> bool:
+        return (p.is_file() and any(p.name.endswith(e) for e in exts)
+                and not config.is_excluded(str(p)))
+
+    def _emit(p):
+        key = config.canonical(str(p))
+        if key not in seen:
+            seen.add(key)
+            return True
+        return False
+
     for root in config.index_roots():
         if not root.exists():
             continue
         for p in root.rglob("*"):
-            if not p.is_file():
-                continue
-            if not any(p.name.endswith(e) for e in exts):
-                continue
-            if not config.is_excluded(str(p)):
+            if _ok(p) and _emit(p):
                 yield p
+    # top-level files directly under the project root (flat repos: app.py at root)
+    try:
+        for p in config.project_root().iterdir():
+            if _ok(p) and _emit(p):
+                yield p
+    except OSError:
+        pass
 
 
 def iter_keymd_files():
+    seen: set[str] = set()
+
+    def _emit(p):
+        key = config.canonical(str(p))
+        if key not in seen:
+            seen.add(key)
+            return True
+        return False
+
     for root in config.index_roots():
         if not root.exists():
             continue
         for p in root.rglob("*.key.md"):
-            if not config.is_excluded(str(p)):
+            if not config.is_excluded(str(p)) and _emit(p):
                 yield p
+    try:
+        for p in config.project_root().glob("*.key.md"):
+            if not config.is_excluded(str(p)) and _emit(p):
+                yield p
+    except OSError:
+        pass
 
 
 _LANG_BY_EXT = {
@@ -67,7 +98,7 @@ def build(verbose: bool = True) -> dict:
     n_sym = n_edge = 0
     t0 = time.time()
     for p in files:
-        sp = str(p)
+        sp = config.canonical(str(p))
         parser = get_parser_for(p)
         if parser is None:
             continue
@@ -116,7 +147,7 @@ def build(verbose: bool = True) -> dict:
 
     n_keymd = 0
     for k in iter_keymd_files():
-        ksp = str(k)
+        ksp = config.canonical(str(k))
         stem = ksp[:-len(".key.md")]
         src_path = ""
         for ext in config.index_extensions():
