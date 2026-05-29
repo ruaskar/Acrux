@@ -43,6 +43,24 @@ def main(argv: list[str] | None = None) -> int:
     wt = sp.add_parser("watch")
     wt.add_argument("--delay", type=float, default=0.6)
 
+    # --- regular-user onboarding ---
+    def _serve_flags(parser):
+        parser.add_argument("--host")
+        parser.add_argument("--port", type=int)
+        parser.add_argument("--threshold", type=int)
+        parser.add_argument("--wire", choices=["openai", "anthropic"])
+        parser.add_argument("--upstream")
+        parser.add_argument("--rebuild", action="store_true")
+    up = sp.add_parser("up"); _serve_flags(up)
+    rn = sp.add_parser("run"); _serve_flags(rn)
+    rn.add_argument("agent", nargs=argparse.REMAINDER)  # everything after `--`
+    ini = sp.add_parser("init"); ini.add_argument("path", nargs="?")
+    ini.add_argument("--force", action="store_true")
+    ini.add_argument("--write-agents", action="store_true")
+    doc = sp.add_parser("doctor")
+    doc.add_argument("--wire", action="store_true")
+    doc.add_argument("--net", action="store_true")
+
     a = p.parse_args(argv)
 
     if a.cmd == "build":
@@ -100,6 +118,24 @@ def main(argv: list[str] | None = None) -> int:
         except ImportError:  # watchdog imported lazily inside build_observer
             print("keymd watch needs watchdog: pip install 'keymd[watch]'")
             return 1
+    elif a.cmd == "up":
+        from keymd import onboarding
+        return onboarding.up(rebuild=a.rebuild, flag_host=a.host, flag_port=a.port,
+                             flag_threshold=a.threshold, flag_wire=a.wire,
+                             flag_upstream=a.upstream)
+    elif a.cmd == "run":
+        from keymd import onboarding
+        cmd = a.agent[1:] if (a.agent and a.agent[0] == "--") else a.agent
+        return onboarding.run_agent(cmd, rebuild=a.rebuild, flag_host=a.host,
+                                    flag_port=a.port, flag_threshold=a.threshold,
+                                    flag_wire=a.wire, flag_upstream=a.upstream)
+    elif a.cmd == "init":
+        from keymd import onboarding
+        return onboarding.init(path=a.path, force=a.force,
+                               write_agents=a.write_agents)
+    elif a.cmd == "doctor":
+        from keymd import onboarding
+        return onboarding.doctor(wire=a.wire, net=a.net)
     return 0
 
 
