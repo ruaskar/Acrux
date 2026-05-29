@@ -23,10 +23,35 @@ It is **not** "AI codebase docs." The defensible combination it ships, that noth
 | **FS watcher** — keeps sidecars + index live on edits | ✅ implemented, tested |
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
-| **SSE streaming to a live host** | ⏳ not yet — needed for real Claude Code use (hosts stream by default). Use non-streaming for now. |
+| **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). |
 | **A/B token benchmark** | ⏳ harness scaffolded; not run (needs API spend) |
 
-> **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream (no API spend). It is **not yet wired for a streaming host** — see `docs/superpowers/plans/` for the streaming/benchmark plan.
+> **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream and a real self-hosted-LLM dogfood (no paid API spend). Streaming clients work via *synthesized* SSE (one delta after the gate completes), not true token-by-token relay — that's a future refinement.
+
+## Bring your own LLM + agent framework
+
+keymd is a transparent middleman: it forwards to **your** upstream with **your** key (it injects no key of its own and drops non-standard headers). It works with any framework + model that meets three requirements:
+
+1. **Wire format:** the framework speaks **OpenAI Chat Completions** (`/v1/chat/completions`) or **Anthropic Messages** (`/v1/messages`). No other envelope (OpenAI Responses, raw completions, Gemini, Cohere…) has an adapter.
+2. **Tool-calling model:** the model emits `tool_calls`/`tool_use` and reads files via a tool named `Read` / `read_file` / `view` / `cat`. (A model that never calls tools → keymd is a transparent pass-through with zero savings.)
+3. **Configurable endpoint:** you can point the framework's `base_url` at `http://localhost:8787`.
+
+Setup:
+```bash
+keymd build                                            # index your repo (gate files > --threshold loc)
+export KEYMD_OPENAI_BASE=http://your-llm:8000          # or KEYMD_UPSTREAM_BASE for an Anthropic endpoint
+keymd serve --port 8787 --threshold 400                # set env BEFORE serve (read at import)
+# in your framework: base_url → http://localhost:8787, keep your own API key
+```
+
+Verified compatibility (examined May 2026):
+
+| Framework / model | Works? | Notes |
+|---|---|---|
+| **Self-hosted via vLLM / Ollama / llama.cpp / LM Studio / LiteLLM** | ✅ | All OpenAI-Chat-compatible; point `KEYMD_OPENAI_BASE` at them. Streaming is opt-in at the server, so the backend is fine. |
+| **OpenClaw** | ✅ | `models.providers.<id>.baseUrl` → the proxy; OpenAI-Chat default. (Its docs already recommend `streaming:false` for OpenAI-compatible backends, which keymd handles either way.) |
+| **Hermes Agent** | ✅ | `config.yaml provider:custom, base_url:…`; OpenAI or Anthropic mode. It forces streaming — keymd's synthesized SSE makes that work. |
+| **Hermes / other local models** | ✅ | Serve behind vLLM with the right tool-call parser (e.g. `--tool-call-parser hermes`) → standard OpenAI `tool_calls`. |
 
 ## Install
 
