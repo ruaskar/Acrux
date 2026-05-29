@@ -23,10 +23,10 @@ It is **not** "AI codebase docs." The defensible combination it ships, that noth
 | **FS watcher** — keeps sidecars + index live on edits | ✅ implemented, tested |
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
-| **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). |
+| **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). Validated against the real `openai` SDK in-process and over a real socket (`python scripts/validate_sse.py`). |
 | **A/B token benchmark** | ⏳ harness scaffolded; not run (needs API spend) |
 
-> **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream and a real self-hosted-LLM dogfood (no paid API spend). Streaming clients work via *synthesized* SSE (one delta after the gate completes), not true token-by-token relay — that's a future refinement.
+> **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream and a real self-hosted-LLM dogfood (no paid API spend). The synthesized stream is validated against the real `openai` SDK — the canonical strict SSE client — both in-process and over a real socket; the *named* frameworks (OpenClaw / Hermes Agent) themselves haven't yet been driven against it. Streaming is *synthesized* (one delta after the gate completes), not true token-by-token relay — that's a future refinement.
 
 ## Bring your own LLM + agent framework
 
@@ -93,6 +93,12 @@ keymd build && keymd serve --threshold 400          # gate files > 400 loc
 ```
 
 Add the steering snippet from [`templates/AGENTS.md`](templates/AGENTS.md) so the agent prefers `keymd_read`/`keymd_impact` over raw reads/greps.
+
+Verify the streaming path works on your machine (no paid API — uses a local stub upstream):
+
+```bash
+python scripts/validate_sse.py      # PASS = SDK parsed the synthesized stream AND the gate fired
+```
 
 ## License
 
