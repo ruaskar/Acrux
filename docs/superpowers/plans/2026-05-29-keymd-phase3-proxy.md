@@ -15,6 +15,19 @@
 
 **Tech:** `httpx` (upstream client + test transport), `starlette` + `uvicorn` (ASGI server) in a new `[proxy]` extra so the engine stays dependency-free. Async tests use `asyncio.run(...)` (no `pytest-asyncio` dependency).
 
+## Status — IMPLEMENTED & GREEN (as-built, 2026-05-29)
+
+Phase 3a is implemented under `src/keymd/proxy/` and **56/56 tests pass** (28 Phase 1 + 28 proxy) on Python 3.11.9/Windows, including the ASGI server smoke test. Dogfooded on the live repo: the gate fired on `index.py` (153 loc > 120 threshold, summary injected, host saw only the final turn) and confinement refused `C:/Windows/win.ini` with no content leak. **The committed source under `src/keymd/proxy/` is canonical** — the task code blocks below are the pre-review draft; the as-built deltas folded in from the adversarial review are:
+
+- **[CRITICAL] `engine.full` path confinement** — reuses `keymd.engine.refresh._confined`; refuses any path outside the project root (closes the confused-deputy exfiltration of `/etc/passwd`/SSH keys/`.env`/API keys). Test: `test_full_refuses_outside_project_root`.
+- **[MAJOR] realpath canonicalization** — `engine.canon = os.path.realpath` (not `os.path.abspath`) everywhere model paths enter (gate, tools, summary marker), matching `build()`'s resolved storage → no silent gate no-op under symlinked roots / Windows casing.
+- **[MAJOR] `engine.full` line cap** (`MAX_FULL_LINES=800`) — truncate-with-notice so the model-advertised full-read can't dump an unbounded blob. Test: `test_full_truncates_huge_file`.
+- **[MAJOR] synthetic-terminal on budget exhaustion** — `adapter.terminal(...)` returns a consumable `end_turn` turn, never an unanswerable `tool_use` turn. Test: `test_budget_exhaustion_returns_synthetic_terminal`.
+- **[MAJOR] `engine.search` FTS5 survival** — catches `sqlite3.OperationalError` on arbitrary model text (`"a AND b"`, `"foo:bar"`) and retries quoted. Test: `test_search_survives_fts_syntax`.
+- **[MAJOR] façade graceful without index** — `impact/callers/callees/search` return a sentinel instead of raising `SystemExit` (worker-killer in server mode). Test: `test_structure_queries_graceful_without_index`.
+- **[MINOR] idempotent directive inject** (marker-guarded, like the tools branch — `test_inject_is_idempotent`); **deterministic summary** (`gate.summary_result` strips the live timestamp — `test_summary_result_marker_and_deterministic`); **intra-turn dedup** (one summary computed per path per turn, still one tool_result per id — `test_multi_nonhost_turn_answers_every_id_in_order`); **lazy `engine` import** in `tools.answer` (removes the task-ordering import hazard); **directive wording** softened to "LARGE file".
+- **Deferred per scope (unchanged):** Grep gating, OpenAI adapter, SSE streaming, prompt-cache-safe blob redirect, `keymd_symbol`, output-cap → **Phase 3b**. Real Claude Code use needs 3b streaming.
+
 ## Shared-contract addendum (proxy-facing — add to the consolidated plan's Contracts on merge)
 - **Neutral type:** `ToolCall{id:str, name:str, input:dict}`.
 - **WireAdapter:** `inject(body)->body` (add virtual tool defs + system directive) · `tool_uses(resp)->[ToolCall]` · `messages(body)->list` · `append_assistant(body, resp)->body` · `append_tool_results(body, [(id,text)])->body`.
