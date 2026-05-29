@@ -63,6 +63,12 @@ async def forward_openai(body: dict, headers: dict, base: str | None = None) -> 
     return await _post(f"{_openai_base(base)}/v1/chat/completions", body, headers)
 
 
+async def forward_count_tokens(body: dict, headers: dict, base: str | None = None) -> dict:
+    # Claude Code calls this for context management; pure passthrough (no file
+    # reads to gate), so a proper Anthropic gateway must expose it or CC 404s.
+    return await _post(f"{_anthropic_base(base)}/v1/messages/count_tokens", body, headers)
+
+
 # --- SSE synthesis -----------------------------------------------------------
 # The gate loop must read whole (non-streamed) responses, so when the HOST asked
 # for stream:true we run the loop buffered and then SYNTHESIZE a valid SSE stream
@@ -159,7 +165,16 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
                                      media_type="text/event-stream")
         return JSONResponse(result)
 
+    async def count_tokens_route(request: Request):
+        # Passthrough — no gate loop (nothing to intercept in a token count).
+        body = await request.json()
+        hdrs = dict(request.headers)
+        result = (await forward_count_tokens(body, hdrs) if upstream is None
+                  else await forward_count_tokens(body, hdrs, upstream))
+        return JSONResponse(result)
+
     return Starlette(routes=[
+        Route("/v1/messages/count_tokens", count_tokens_route, methods=["POST"]),
         Route("/v1/messages", anthropic_route, methods=["POST"]),
         Route("/v1/chat/completions", openai_route, methods=["POST"]),
     ])
