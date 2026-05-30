@@ -75,6 +75,15 @@ def test_read_range_refuses_outside_root(tmp_proj, tmp_path):
     assert "refused" in engine.read_range(outside, 1, 5)
 
 
+def test_read_range_truncates_with_notice(tmp_proj):
+    big = tmp_proj / "big.txt"
+    big.write_text("\n".join(f"line{i}" for i in range(1, 1001)) + "\n",
+                   encoding="utf-8")
+    out = engine.read_range(engine.canon(str(big)), 1, 1000)   # 1000 > 800 cap
+    assert "truncated at 800 lines" in out      # never silently cut
+    assert "line1\n" in out                     # head is present
+
+
 # --- keymd_edit -------------------------------------------------------------
 def test_edit_applies_and_reindexes(tmp_proj):
     ap = _abs(tmp_proj)

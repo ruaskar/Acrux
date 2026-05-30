@@ -32,12 +32,35 @@ def _anchor(line: int | None, end: int | None) -> str:
     return f"  # L{line}" if (not end or end == line) else f"  # L{line}-{end}"
 
 
+def _render_doc(con, src_path: str, lang: str, loc: int, sha: str) -> str:
+    """Table-of-Contents summary for a document: section headings indented by level
+    with their L<start>-<end> anchors, so an agent pulls one section via
+    keymd_read_range instead of the whole file."""
+    rows = con.execute(
+        "SELECT signature, name, line, end_line FROM symbols WHERE path=? "
+        "ORDER BY line", (src_path,)).fetchall()
+    out = [f"# {relpath(src_path)}  [{lang} · {loc} lines · sha:{sha[:8]}]",
+           "sections (L-spans include nested sub-sections):"]
+    if not rows:
+        out.append("  (no headings)")
+    for sig, name, line, end in rows:
+        sig = sig or name
+        level = len(sig) - len(sig.lstrip("#")) or 1     # leading '#' count
+        label = sig.lstrip("#").strip()
+        out.append(f"{'  ' * level}{label}{_anchor(line, end)}")
+    out.append(f"{TS_PREFIX} {time.strftime('%Y-%m-%dT%H:%M', time.localtime())}")
+    return "\n".join(out) + "\n"
+
+
 def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
     cur = con.cursor()
     frow = cur.execute(
         "SELECT lang, line_count, sha256 FROM files WHERE path=?",
         (src_path,)).fetchone()
     lang, loc, sha = frow if frow else ("?", 0, "")
+
+    if lang == "markdown":          # documents get a Table-of-Contents, not api/deps
+        return _render_doc(con, src_path, lang, loc, sha)
 
     # API: top-level symbols with signatures, ordered by line.
     cur.execute(

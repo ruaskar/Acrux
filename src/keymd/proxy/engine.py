@@ -94,10 +94,15 @@ def read_range(abspath: str, start: int, end: int) -> str:
     end = max(start, min(len(lines), end or start))
     if start > len(lines):
         return f"(L{start} is past end of file — {len(lines)} lines)"
-    if end - start + 1 > MAX_FULL_LINES:
+    truncated = end - start + 1 > MAX_FULL_LINES
+    if truncated:
         end = start + MAX_FULL_LINES - 1
     body = "\n".join(lines[start - 1:end])
-    return f"# {Path(abspath).name}  L{start}-{end}\n{body}"
+    out = f"# {Path(abspath).name}  L{start}-{end}\n{body}"
+    if truncated:                                   # never silently cut a section
+        out += (f"\n\n(...truncated at {MAX_FULL_LINES} lines; call "
+                f"keymd_read_range(path, {end + 1}, ...) for the rest)")
+    return out
 
 
 def read_symbol(abspath: str, symbol: str) -> str:
