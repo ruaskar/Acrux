@@ -11,9 +11,11 @@ requires-python = ">=3.11"
 authors = [{ name = "ruaskar" }]
 keywords = ["llm", "agents", "tokens", "proxy", "code-index", "tree-sitter"]
 classifiers = [
-    # Guard: makes PyPI/twine REJECT an upload. The repo is private/pre-release;
-    # going public later = remove this line + add a real license.
+    # Repo is public + Apache-2.0; install is git-based (see README). This guard
+    # still makes PyPI/twine REJECT an upload — publishing to PyPI is a deliberate
+    # later step (remove this line, then `twine upload`).
     "Private :: Do Not Upload",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Intended Audience :: Developers",
 ]

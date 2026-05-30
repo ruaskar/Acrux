@@ -174,4 +174,4 @@ python scripts/validate_sse.py      # PASS = SDK parsed the synthesized stream A
 
 ## License
 
-Private (pre-release). No redistribution without permission.
+[Apache-2.0](LICENSE) © ruaskar. Patent grant included; use, modify, and redistribute with attribution + NOTICE preservation.
