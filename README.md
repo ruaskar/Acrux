@@ -27,6 +27,32 @@ For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): 
 
 > If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
 
+## Install as a binary — no Python, no pip
+
+Prefer a self-contained executable? Install the native binary (built with
+[PyApp](https://ofek.dev/pyapp); no Python or pip needed on your machine):
+
+```bash
+# Linux / macOS (Apple Silicon):
+curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh
+# Windows (PowerShell):
+irm https://raw.githubusercontent.com/ruaskar/keymd/master/install.ps1 | iex
+```
+
+Or download a binary directly from the
+[latest release](https://github.com/ruaskar/keymd/releases/latest) —
+`keymd-linux-x86_64`, `keymd-macos-aarch64`, `keymd-windows-x86_64.exe`. On first run it
+installs its dependencies into a private environment (one-time, ~seconds); every run after
+is instant. *Intel Macs:* use the `pip install` above for now.
+
+**Keep it current** — `keymd update` downloads the latest release, **verifies it against the
+published `SHA256SUMS`**, and self-replaces the running binary:
+
+```bash
+keymd update        # or: keymd update --check   (report only)
+keymd --version
+```
+
 ## Summarize documents too — Markdown · PDF · Word
 
 `keymd build` indexes documents alongside code. A long document gets a **table of
