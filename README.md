@@ -51,6 +51,20 @@ small codebases.
 > measured −29% tokens / −85% lines / 96% accuracy retained on a different codebase; a paid
 > end-to-end harness for keymd is scaffolded in [`benchmarks/ab_harness.py`](benchmarks/ab_harness.py), not run.)
 
+## Does the gate degrade the agent? No.
+
+A paired-subagent A/B on a 5-task battery over this repo (comprehension · structure · trace
+· locate · fix): a **control** agent reads full source; a **treatment** agent reads only
+keymd's `.key.md` summaries, opening full source solely when a summary is insufficient. An
+independent judge (blind to which arm) scored every answer against a ground-truth key.
+
+**Result: 5/5 vs 5/5 — 100% accuracy retained.** The summary-reading agent answered every
+question as correctly as the full-source agent — and on one task found *more* (both call
+sites of a function, surfaced by the call-graph summary). Reading compact summaries cost
+zero answer quality; the token savings come from the *enforced* gate above (the agent can
+always pull full source via `keymd_read_full` when it needs to). Full methodology + per-task
+numbers: [`benchmarks/ability_eval.md`](benchmarks/ability_eval.md).
+
 ## Use keymd from your IDE or framework (attach mode)
 
 IDE agents (Claude Code in VS Code, Codex, Cline, Continue, Cursor) and config-file
