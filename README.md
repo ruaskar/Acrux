@@ -13,7 +13,7 @@ it needs, opening the full source only when it has to. Summaries are determinist
 AST / document structure with **no extra LLM call** — and your API key never leaves your machine.
 
 ```bash
-pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"   # or a 1-line binary install, no Python — see below
+curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh   # no Python needed (Windows: install.ps1)
 keymd run -- claude
 ```
 
