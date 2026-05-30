@@ -1,17 +1,43 @@
 # keymd
 
-**`pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"` · then `keymd run -- <your agent>`** — a local proxy that gates a full file read behind a compact, **line-anchored** summary, so your agent reads ~15 lines of API + call-graph (or a document's table of contents) instead of a 5,000-line file or a 200-page PDF — then pulls or **edits** just the lines it needs. Works on **code** (Python · JS/TS) and **documents** (Markdown · PDF · Word). No model change, your API key never leaves your machine. **Measured on this repo: 53% fewer tokens, 80% fewer lines read.**
+[![Release](https://img.shields.io/github/v/release/ruaskar/keymd?sort=semver&color=2ea043)](https://github.com/ruaskar/keymd/releases/latest)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Binaries](https://img.shields.io/badge/binaries-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555)](https://github.com/ruaskar/keymd/releases/latest)
 
-`keymd` runs a localhost proxy in front of your LLM endpoint that **gates a full file read behind a compact summary** — and only pulls the full source when it explicitly needs to. Code files get an API + call-graph map; **documents** (Markdown/PDF/Word) get a table of contents; and every symbol or section carries a `# L<start>-<end>` **anchor**, so the agent reads — or surgically **edits** — just that region (`keymd_read_symbol` / `keymd_read_range` / `keymd_edit`) instead of the whole file. The summaries are deterministic (extracted from the AST / document structure, **no LLM call**) and kept fresh by an incremental call-graph index.
+### Cut your AI coding agent's token usage by 50–70% — with no loss in answer quality.
 
-It is **not** "AI codebase docs." The defensible combination it ships, that nothing else does:
+`keymd` is a local proxy in front of your LLM that swaps every **full file read for a compact,
+line-anchored summary** — an API + call-graph map for code, a table of contents for **PDF / Word /
+Markdown**. Your agent navigates by summary and pulls (or surgically **edits**) only the exact lines
+it needs, opening the full source only when it has to. Summaries are deterministic — built from the
+AST / document structure with **no extra LLM call** — and your API key never leaves your machine.
 
-> per-file sidecars for **code and documents** · a **deterministic structure** section regenerated with no LLM · **served and enforced on every read** by a local proxy · with **line anchors** for surgical reads + edits · backed by a **live incremental call-graph** index.
+```bash
+pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"   # or a 1-line binary install, no Python — see below
+keymd run -- claude
+```
+
+### Performance — measured on keymd's own repo · deterministic · `tiktoken o200k_base`
+
+| Workload | Tokens | Lines read |
+|---|--:|--:|
+| Agent reads the whole repo | **−72%** | **−80%** |
+| Realistic gate (files > 75 loc) | **−53%** | — |
+| One large file (`cli.py`, 151 loc) | **−89%** | — |
+
+And it **doesn't dumb the agent down**: a paired-agent A/B scored by a blind judge found accuracy
+**fully retained** — **5/5 vs 5/5** reading summaries instead of source, **15/15** under the strict
+enforced gate. keymd is a token lever, not a capability tax.
+→ [full methodology + honest boundaries](#measured-token-savings)
+
+> **Why it's different:** per-file sidecars for **code *and* documents** · a deterministic structure
+> section regenerated with **no LLM** · **served and enforced on every read** by a local proxy ·
+> **line anchors** for surgical reads + edits · backed by a **live, incremental call-graph** index.
 
 ## Quickstart (one command)
 
 ```bash
-pip install keymd[all]
+pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"   # not yet on PyPI; or use the binary
 cd your-project
 keymd run -- claude        # build index + serve + wire base-url + launch the agent through keymd
 ```
