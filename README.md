@@ -1,8 +1,8 @@
 # keymd
 
-**A local-only, cross-framework token-saving enforcement layer for coding agents.**
+**`pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"` · then `keymd run -- <your agent>`** — a local proxy that gates full file reads behind compact `.key.md` summaries, so your coding agent reads ~15 lines of API + call-graph instead of a 5,000-line file. No model change, your API key never leaves your machine. **Measured on this repo: 53% fewer tokens, 80% fewer lines read.**
 
-`keymd` runs a localhost proxy in front of your LLM endpoint that **gates a full file read behind a compact `.key.md` summary** — so an agent reads ~15 lines of API + call-graph instead of a 5,000-line file, and only pulls the full source when it explicitly needs to. The summaries are deterministic (extracted from the AST, **no LLM call**), committed next to your code, and kept fresh by an incremental call-graph index.
+`keymd` runs a localhost proxy in front of your LLM endpoint that **gates a full file read behind a compact `.key.md` summary** — and only pulls the full source when it explicitly needs to. The summaries are deterministic (extracted from the AST, **no LLM call**), committed next to your code, and kept fresh by an incremental call-graph index.
 
 It is **not** "AI codebase docs." The defensible combination it ships, that nothing else does:
 
@@ -26,6 +26,30 @@ For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): 
 `base_url` at it. Verify anytime with `keymd doctor --wire` (no API spend).
 
 > If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
+
+## Measured token savings
+
+Deterministic, **no API spend** — full source vs `.key.md` summary, counted with a real
+tokenizer (`tiktoken o200k_base`). Reproduce: `python benchmarks/offline_ab.py`. Numbers
+below are measured **on keymd's own repo** (86 files, all small — a compact repo
+*understates* the effect, since a summary is ~constant size regardless of file length).
+
+| View | Arm A (full) | Arm B (keymd) | Reduction |
+|---|---|---|---|
+| **Whole repo** (read every file) | 51,710 tok / 5,231 lines | 14,565 tok / 1,061 lines | **71.8% tok · 79.7% lines** |
+| **Realistic gate** (>75 loc, no fallback) | 51,710 tok | 24,198 tok | **53.2% tok** |
+| Per-file (e.g. `cli.py` 151 loc) | 1,692 tok | 186 tok | 89.0% |
+
+**Fallback sweep** (`f` = fraction of files the agent still reads in full): 71.8% → 46.8%
+(f=25%) → 21.8% (f=50%). **Gate-threshold sweep**: the default 400-loc gate fires on 0
+files in a compact repo; ~75 loc is the sweet spot here (53% cut) — lower the gate for
+small codebases.
+
+> **Honest boundary:** this is the *read-payload* lever only — not whether cheap summaries
+> make a model read *more* files, not task success, not write-heavy work. The savings are
+> largest on read-heavy work over large files. (The source aotc-harness end-to-end A/B
+> measured −29% tokens / −85% lines / 96% accuracy retained on a different codebase; a paid
+> end-to-end harness for keymd is scaffolded in [`benchmarks/ab_harness.py`](benchmarks/ab_harness.py), not run.)
 
 ## Use keymd from your IDE or framework (attach mode)
 
@@ -72,7 +96,7 @@ upstream untouched. Verify with `keymd doctor --wire`.
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
 | **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). Validated against the real `openai` SDK in-process and over a real socket (`python scripts/validate_sse.py`). |
-| **A/B token benchmark** | ⏳ harness scaffolded; not run (needs API spend) |
+| **A/B token benchmark** | ✅ offline (no-spend) harness run — see [Measured token savings](#measured-token-savings); paid end-to-end harness scaffolded, not run |
 
 > **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream and a real self-hosted-LLM dogfood (no paid API spend). The synthesized stream is validated against the real `openai` SDK — the canonical strict SSE client — both in-process and over a real socket; the *named* frameworks (OpenClaw / Hermes Agent) themselves haven't yet been driven against it. Streaming is *synthesized* (one delta after the gate completes), not true token-by-token relay — that's a future refinement.
 
@@ -150,4 +174,4 @@ python scripts/validate_sse.py      # PASS = SDK parsed the synthesized stream A
 
 ## License
 
-Private (pre-release). No redistribution without permission.
+[Apache-2.0](LICENSE) © ruaskar. Patent grant included; use, modify, and redistribute with attribution + NOTICE preservation.
