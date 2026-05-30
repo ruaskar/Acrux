@@ -17,6 +17,7 @@ MAX_DEPS = 10
 MAX_CALLS = 15
 MAX_CALLERS_PER_SYM = 5
 TS_PREFIX = "refreshed:"
+_DOC_LANGS = {"markdown", "pdf", "docx"}   # render as a Table-of-Contents, not api/deps
 
 
 def strip_timestamp(text: str) -> str:
@@ -59,7 +60,7 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
         (src_path,)).fetchone()
     lang, loc, sha = frow if frow else ("?", 0, "")
 
-    if lang == "markdown":          # documents get a Table-of-Contents, not api/deps
+    if lang in _DOC_LANGS:          # documents get a Table-of-Contents, not api/deps
         return _render_doc(con, src_path, lang, loc, sha)
 
     # API: top-level symbols with signatures, ordered by line.

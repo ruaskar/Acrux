@@ -14,3 +14,8 @@ try:  # JS/TS parsers register only if the `lang` extra (tree-sitter) is install
     from keymd.engine.parsers import treesitter  # noqa: F401
 except Exception:
     pass
+
+try:  # PDF/DOCX parsers register only if the `docs` extra is installed
+    from keymd.engine.parsers import pdf, docx  # noqa: F401
+except Exception:
+    pass

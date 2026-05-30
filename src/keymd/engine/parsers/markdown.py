@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from keymd.engine.parsers.base import ParseResult, Symbol, register
+from keymd.engine.parsers.base import ParseResult, build_sections, register
 
 _ATX = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")   # ATX heading, optional closing #s
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")       # ≥3 of one kind, ≤3-space indent
@@ -46,27 +46,8 @@ class MarkdownParser:
 
     def parse(self, path: Path) -> ParseResult:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        lc = len(lines)
-        heads = _headings(lines)
-        symbols: list[Symbol] = []
-        used: set[str] = set()                     # all emitted names (PK is path,name)
-        for idx, (level, label, line) in enumerate(heads):
-            # A section spans until the next heading of EQUAL OR HIGHER level (so it
-            # includes its sub-sections), else to end of file.
-            end = lc
-            for level2, _t, line2 in heads[idx + 1:]:
-                if level2 <= level:
-                    end = line2 - 1
-                    break
-            base = label or f"section-{line}"      # dedupe vs ALL emitted names, so a
-            name, k = base, 1                      # literal "Foo #2" can't collide
-            while name in used:
-                k += 1
-                name = f"{base} #{k}"
-            used.add(name)
-            symbols.append(Symbol(name, "section", line,
-                                  f"{'#' * level} {label}", end))
-        return ParseResult(symbols=symbols, edges=[], line_count=lc)
+        return ParseResult(symbols=build_sections(_headings(lines), len(lines)),
+                           edges=[], line_count=len(lines))
 
 
 register(MarkdownParser())
