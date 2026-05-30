@@ -1,0 +1,88 @@
+name: binary
+
+# Compiles the self-contained keymd binary (PyApp) for every platform, smoke-tests
+# its first-run install, and uploads artifacts. On a v* tag it also cuts a Release.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/binary-distribution]
+    tags: ['v*']
+
+permissions:
+  contents: write          # the release job attaches assets
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Build Linux on the OLDEST supported runner glibc (22.04 = 2.35) so the
+          # binary runs on glibc >= 2.35 (Debian 12, Ubuntu 22.04+, …). ubuntu-latest
+          # (24.04 = 2.39) would refuse to run on most current systems.
+          - { os: ubuntu-22.04,   target: linux-x86_64,   exe: "" }
+          - { os: macos-13,       target: macos-x86_64,   exe: "" }
+          - { os: macos-14,       target: macos-aarch64,  exe: "" }
+          - { os: windows-latest, target: windows-x86_64, exe: ".exe" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build binary
+        shell: bash
+        run: bash packaging/build_binary.sh
+
+      - name: Smoke test (first-run install + index a fixture)
+        shell: bash
+        run: |
+          bin="$PWD/dist/keymd${{ matrix.exe }}"
+          tmp="$(mktemp -d)"
+          printf 'def f():\n    return 1\n' > "$tmp/a.py"
+          ( cd "$tmp" && "$bin" build && "$bin" stats )
+
+      - name: Verify zero-Python (Linux, container with NO python)
+        if: matrix.target == 'linux-x86_64'
+        shell: bash
+        run: |
+          tmp="$(mktemp -d)"; printf 'def f():\n    return 1\n' > "$tmp/a.py"
+          docker run --rm -v "$PWD/dist:/d:ro" -v "$tmp:/w" -w /w debian:bookworm-slim bash -c '
+            set -e
+            apt-get update -qq && apt-get install -y -qq ca-certificates >/dev/null   # HTTPS to PyPI; NOT python
+            if command -v python || command -v python3; then echo "system python present — proof invalid"; exit 1; fi
+            /d/keymd build && /d/keymd stats'
+
+      - name: Stage release asset
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "dist/keymd${{ matrix.exe }}" "out/keymd-${{ matrix.target }}${{ matrix.exe }}"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keymd-${{ matrix.target }}
+          path: out/keymd-${{ matrix.target }}${{ matrix.exe }}
+          if-no-files-found: error
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -R artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
