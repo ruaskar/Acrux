@@ -53,7 +53,7 @@ For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): 
 
 > If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
 
-## Install as a binary — no Python, no pip
+## Install as a binary 
 
 Prefer a self-contained executable? Install the native binary (built with
 [PyApp](https://ofek.dev/pyapp); no Python or pip needed on your machine):
