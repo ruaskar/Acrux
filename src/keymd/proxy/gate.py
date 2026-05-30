@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from keymd.engine.keymd_render import strip_timestamp
 from keymd.proxy import engine
@@ -20,7 +21,7 @@ MARKER_RE = re.compile(r"⟪keymd-summary:(.+?)⟫")
 
 @dataclass
 class Decision:
-    kind: str            # "virtual" | "gated" | "host"
+    kind: Literal["virtual", "gated", "host"]
     call: ToolCall
     path: str | None = None   # canonical absolute path, set when kind == "gated"
 

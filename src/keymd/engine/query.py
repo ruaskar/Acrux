@@ -66,7 +66,9 @@ def impact(path: str) -> dict:
     path = config.canonical(path)
     with _conn() as con:
         cur = con.cursor()
-        cur.execute("SELECT name FROM symbols WHERE path=? ORDER BY line", (path,))
+        cur.execute("SELECT name FROM symbols WHERE path=? "        # callables only:
+                    "AND kind IN ('function', 'method', 'class') "  # consts have no
+                    "ORDER BY line", (path,))                        # callers
         own = sorted({r[0] for r in cur.fetchall()})
         stem = Path(path).stem
         per_symbol: dict[str, list[str]] = {}

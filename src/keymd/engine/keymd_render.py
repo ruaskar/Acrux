@@ -96,8 +96,10 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
     calls_more = max(0, len(calls) - MAX_CALLS)
     calls_show = calls[:MAX_CALLS]
 
-    # callers
-    cur.execute("SELECT name FROM symbols WHERE path=?", (src_path,))
+    # callers — only callables have callers; constants/fields would otherwise be
+    # falsely attributed via the leaf-name match in callers_for_symbol.
+    cur.execute("SELECT name FROM symbols WHERE path=? "
+                "AND kind IN ('function', 'method', 'class')", (src_path,))
     own = sorted({r[0] for r in cur.fetchall()})
     stem = Path(src_path).stem
     caller_lines = []
