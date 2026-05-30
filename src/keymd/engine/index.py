@@ -23,7 +23,10 @@ def iter_source_files():
     seen: set[str] = set()
 
     def _ok(p) -> bool:
-        return (p.is_file() and any(p.name.endswith(e) for e in exts)
+        # .key.md are keymd's OWN sidecars (handled by iter_keymd_files); the .md
+        # parser would otherwise match them by suffix and index them as documents.
+        return (p.is_file() and not p.name.endswith(".key.md")
+                and any(p.name.endswith(e) for e in exts)
                 and not config.is_excluded(str(p)))
 
     def _emit(p):
@@ -76,6 +79,7 @@ _LANG_BY_EXT = {
     ".py": "python", ".js": "javascript", ".jsx": "javascript",
     ".mjs": "javascript", ".cjs": "javascript",
     ".ts": "typescript", ".tsx": "typescript",
+    ".md": "markdown",
 }
 
 

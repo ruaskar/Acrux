@@ -8,6 +8,7 @@ keymd.engine.parsers.base (which runs this __init__ first), instead of the
 registry being empty in every process except the CLI.
 """
 from keymd.engine.parsers import python  # noqa: F401  (registers the .py parser)
+from keymd.engine.parsers import markdown  # noqa: F401  (registers the .md doc parser)
 
 try:  # JS/TS parsers register only if the `lang` extra (tree-sitter) is installed
     from keymd.engine.parsers import treesitter  # noqa: F401
