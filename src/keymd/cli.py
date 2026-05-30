@@ -19,6 +19,13 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] in ("--version", "-V"):   # handled before the required subcommand
+        from keymd import __version__
+        print(f"keymd {__version__}")
+        return 0
+
     p = argparse.ArgumentParser(prog="keymd")
     sp = p.add_subparsers(dest="cmd", required=True)
 
@@ -70,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     doc.add_argument("--wire", action="store_true")
     doc.add_argument("--net", action="store_true")
     idep = sp.add_parser("ide"); idep.add_argument("tool", nargs="?")
+    upd = sp.add_parser("update")
+    upd.add_argument("--check", action="store_true",
+                     help="report whether a newer release exists, without installing")
 
     a = p.parse_args(argv)
 
@@ -153,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "ide":
         from keymd import onboarding
         return onboarding.ide(tool=a.tool)
+    elif a.cmd == "update":
+        from keymd import update as _update
+        return _update.update(check_only=a.check)
     return 0
 
 

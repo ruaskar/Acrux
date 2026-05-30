@@ -47,6 +47,20 @@ jobs:
           printf 'def f():\n    return 1\n' > "$tmp/a.py"
           ( cd "$tmp" && "$bin" build && "$bin" stats )
 
+      - name: Verify --version + self-update wiring
+        shell: bash
+        run: |
+          bin="$PWD/dist/keymd${{ matrix.exe }}"
+          "$bin" --version
+          out="$("$bin" update 2>&1 || true)"; echo "$out"
+          # must not crash with a traceback
+          if echo "$out" | grep -qi "traceback"; then echo "FAIL: update crashed"; exit 1; fi
+          # PYAPP_PASS_LOCATION must be wired: `update` should reach the release check
+          # (no release yet -> 'could not reach'), NOT bail with 'binary distribution only'.
+          if echo "$out" | grep -qi "binary distribution only"; then
+            echo "FAIL: PYAPP/PASS_LOCATION not passing the launcher path"; exit 1; fi
+          echo "self-update wiring OK"
+
       - name: Verify zero-Python (Linux, container with NO python)
         if: matrix.target == 'linux-x86_64'
         shell: bash
@@ -82,6 +96,8 @@ jobs:
           path: artifacts
           merge-multiple: true
       - run: ls -R artifacts
+      - name: Checksums (keymd update verifies against these)
+        run: cd artifacts && sha256sum keymd-* > SHA256SUMS && cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*

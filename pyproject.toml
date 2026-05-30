@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keymd"
-version = "0.1.0"
+dynamic = ["version"]                 # single-sourced from keymd.__version__ (bump that for a release)
 description = "Cross-framework token-saving enforcement layer: LLM-optimized .key.md sidecars + call-graph index + local enforcing proxy"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,6 +36,9 @@ Repository = "https://github.com/ruaskar/keymd"
 
 [project.scripts]
 keymd = "keymd.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "keymd.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
