@@ -72,12 +72,31 @@ def test_mismatched_fence_markers_do_not_leak(tmp_path):
     assert names == {"Real", "After"}
 
 
+def test_longer_fence_not_closed_by_shorter(tmp_path):
+    # a 4-backtick fence is NOT closed by a 3-backtick line, so the `#` between
+    # them stays inside the code block.
+    p = tmp_path / "g.md"
+    p.write_text("# Top\n\n````\n```\n# inside code\n````\n\n## End\n\nx\n",
+                 encoding="utf-8")
+    names = {s.name for s in MarkdownParser().parse(p).symbols}
+    assert names == {"Top", "End"}
+
+
+def test_dedupe_never_drops_a_section(tmp_path):
+    # "Dup", a literal "Dup #2", then "Dup" again → 3 distinct sections, none
+    # silently dropped by the (path, name) PK.
+    p = tmp_path / "h.md"
+    p.write_text("# Dup\n\n# Dup #2\n\n# Dup\n", encoding="utf-8")
+    names = [s.name for s in MarkdownParser().parse(p).symbols]
+    assert len(names) == 3 and len(set(names)) == 3
+
+
 # --- ToC render -------------------------------------------------------------
 def test_render_is_a_toc_with_anchors(doc_proj):
     con = db.connect(config.index_path())
     text = render_keymd(con, _md(doc_proj))
     con.close()
-    assert "sections:" in text
+    assert "include nested sub-sections" in text      # spans-include-children note
     assert "# L5-13" in text                          # Installation span anchor
     assert "Installation" in text and "Usage" in text
     assert "api:" not in text and "called_by:" not in text   # not the code layout

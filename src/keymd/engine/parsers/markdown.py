@@ -14,22 +14,23 @@ from pathlib import Path
 from keymd.engine.parsers.base import ParseResult, Symbol, register
 
 _ATX = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")   # ATX heading, optional closing #s
-_FENCE = re.compile(r"^ {0,3}(```|~~~)")           # fence: ≤3-space indent (4+ = code)
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")       # ≥3 of one kind, ≤3-space indent
 
 
 def _headings(lines: list[str]) -> list[tuple[int, str, int]]:
     """(level, text, line) for ATX headings OUTSIDE fenced code blocks (so a `#`
-    comment inside ```` ``` ```` is not mistaken for a heading). A fence is closed
-    only by the SAME marker that opened it (``` ≠ ~~~), per CommonMark."""
+    comment inside ```` ``` ```` is not mistaken for a heading). Per CommonMark a
+    fence closes only with the SAME char (``` ≠ ~~~) and a run at least as long as
+    the opener — so a 3-backtick line does NOT close a 4-backtick fence."""
     out: list[tuple[int, str, int]] = []
-    fence: str | None = None                       # the opening marker, or None
+    fence: tuple[str, int] | None = None           # (char, length) of the opener
     for i, raw in enumerate(lines, start=1):
         fm = _FENCE.match(raw)
         if fm:
-            marker = fm.group(1)
+            run = fm.group(1)
             if fence is None:                      # open
-                fence = marker
-            elif marker == fence:                  # close only with the same kind
+                fence = (run[0], len(run))
+            elif run[0] == fence[0] and len(run) >= fence[1]:   # valid close
                 fence = None
             continue
         if fence is not None:
@@ -48,7 +49,7 @@ class MarkdownParser:
         lc = len(lines)
         heads = _headings(lines)
         symbols: list[Symbol] = []
-        seen: dict[str, int] = {}
+        used: set[str] = set()                     # all emitted names (PK is path,name)
         for idx, (level, label, line) in enumerate(heads):
             # A section spans until the next heading of EQUAL OR HIGHER level (so it
             # includes its sub-sections), else to end of file.
@@ -57,12 +58,12 @@ class MarkdownParser:
                 if level2 <= level:
                     end = line2 - 1
                     break
-            name = label or f"section-{line}"
-            if name in seen:                       # dedupe for the (path, name) PK
-                seen[name] += 1
-                name = f"{name} #{seen[name]}"
-            else:
-                seen[name] = 1
+            base = label or f"section-{line}"      # dedupe vs ALL emitted names, so a
+            name, k = base, 1                      # literal "Foo #2" can't collide
+            while name in used:
+                k += 1
+                name = f"{base} #{k}"
+            used.add(name)
             symbols.append(Symbol(name, "section", line,
                                   f"{'#' * level} {label}", end))
         return ParseResult(symbols=symbols, edges=[], line_count=lc)

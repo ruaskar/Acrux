@@ -40,7 +40,7 @@ def _render_doc(con, src_path: str, lang: str, loc: int, sha: str) -> str:
         "SELECT signature, name, line, end_line FROM symbols WHERE path=? "
         "ORDER BY line", (src_path,)).fetchall()
     out = [f"# {relpath(src_path)}  [{lang} · {loc} lines · sha:{sha[:8]}]",
-           "sections:"]
+           "sections (L-spans include nested sub-sections):"]
     if not rows:
         out.append("  (no headings)")
     for sig, name, line, end in rows:
