@@ -11,7 +11,13 @@ dest="${KEYMD_INSTALL_DIR:-$HOME/.local/bin}"
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os" in
   Linux)  plat="linux-x86_64" ;;
-  Darwin) case "$arch" in arm64|aarch64) plat="macos-aarch64" ;; *) plat="macos-x86_64" ;; esac ;;
+  Darwin)
+    case "$arch" in
+      arm64|aarch64) plat="macos-aarch64" ;;
+      *) echo "no prebuilt binary for Intel Macs yet — install via pip/uvx:" >&2
+         echo "  pipx install \"keymd[all] @ git+https://github.com/$repo\"" >&2
+         exit 1 ;;
+    esac ;;
   *) echo "unsupported OS '$os' — on Windows use install.ps1 or the .exe from Releases" >&2; exit 1 ;;
 esac
 
