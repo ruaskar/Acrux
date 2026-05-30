@@ -11,7 +11,7 @@ from keymd.engine import config
 @dataclass
 class Symbol:
     name: str            # qualified name, e.g. "Parser.parse"
-    kind: str            # "function" | "method" | "class"
+    kind: str            # function|method|class|section|constant|enum_member|attribute
     line: int
     signature: str | None = None
     end_line: int | None = None   # last line of the symbol's body (for ranged reads)
