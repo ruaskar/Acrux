@@ -40,6 +40,17 @@ def _con_or_none():
     return db.connect(config.index_path()) if _index_ready() else None
 
 
+def _doc_text(abspath: str) -> str | None:
+    """Extracted text for a binary document (PDF/DOCX), else None — so ranged reads
+    slice this cache instead of the unreadable binary file."""
+    con = _con_or_none()
+    if con is None:
+        return None
+    row = con.execute("SELECT text FROM doc_text WHERE path=?", (abspath,)).fetchone()
+    con.close()
+    return row[0] if row else None
+
+
 def summary(abspath: str) -> str | None:
     con = _con_or_none()
     if con is None:
@@ -67,10 +78,14 @@ def full(abspath: str) -> str:
     # Confinement: never read outside the project root (confused-deputy guard).
     if not _confined(abspath):
         return f"(refused: {abspath} is outside the project root)"
-    try:
-        text = Path(abspath).read_text(encoding="utf-8", errors="replace")
-    except OSError as e:
-        return f"(error reading {abspath}: {e})"
+    cached = _doc_text(abspath)                  # binary doc → serve extracted text
+    if cached is not None:
+        text = cached
+    else:
+        try:
+            text = Path(abspath).read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            return f"(error reading {abspath}: {e})"
     lines = text.splitlines()
     if len(lines) > MAX_FULL_LINES:
         head = "\n".join(lines[:MAX_FULL_LINES])
@@ -84,10 +99,14 @@ def read_range(abspath: str, start: int, end: int) -> str:
     ranged read that lets an agent pull a region without the whole file. Confined."""
     if not _confined(abspath):
         return f"(refused: {abspath} is outside the project root)"
-    try:
-        lines = Path(abspath).read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError as e:
-        return f"(error reading {abspath}: {e})"
+    cached = _doc_text(abspath)                  # binary doc → slice extracted text
+    if cached is not None:
+        lines = cached.splitlines()
+    else:
+        try:
+            lines = Path(abspath).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as e:
+            return f"(error reading {abspath}: {e})"
     if not lines:
         return f"({Path(abspath).name} is empty)"
     start = max(1, start)
@@ -130,6 +149,8 @@ def edit(abspath: str, old: str, new: str) -> str:
     real = os.path.realpath(abspath)            # resolve once; read+write+sync use it
     if not _confined(real):
         return f"(refused: {abspath} is outside the project root)"
+    if _doc_text(real) is not None:             # can't round-trip a text edit into a binary doc
+        return "(cannot edit a binary document; keymd_edit works on text/code files)"
     try:
         text = Path(real).read_text(encoding="utf-8", errors="replace")
     except OSError as e:

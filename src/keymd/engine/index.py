@@ -79,7 +79,7 @@ _LANG_BY_EXT = {
     ".py": "python", ".js": "javascript", ".jsx": "javascript",
     ".mjs": "javascript", ".cjs": "javascript",
     ".ts": "typescript", ".tsx": "typescript",
-    ".md": "markdown",
+    ".md": "markdown", ".pdf": "pdf", ".docx": "docx",
 }
 
 
@@ -131,6 +131,9 @@ def build(verbose: bool = True) -> dict:
             "to_path, kind, line) VALUES (?, ?, ?, NULL, ?, ?)",
             [(sp, e.from_name, e.to_name, e.kind, e.line) for e in result.edges],
         )
+        if result.text is not None:               # cached extracted text for binary docs
+            con.execute("INSERT OR REPLACE INTO doc_text(path, text) VALUES (?, ?)",
+                        (sp, result.text))
         n_sym += len(result.symbols)
         n_edge += len(result.edges)
     con.commit()

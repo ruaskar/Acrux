@@ -45,6 +45,14 @@ CREATE TABLE IF NOT EXISTS keymds (
     auto_refreshed_at REAL
 );
 
+-- Extracted plain text of binary documents (PDF/DOCX). Binary docs have no
+-- readable source lines, so ranged reads + section anchors operate over THIS
+-- text. Populated at index/sync time; rebuilt with the index.
+CREATE TABLE IF NOT EXISTS doc_text (
+    path TEXT PRIMARY KEY,
+    text TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS keymd_fts USING fts5(
     path UNINDEXED,
     content,

@@ -68,6 +68,9 @@ def sync_one(src_path: str) -> None:
         "INSERT OR IGNORE INTO edges(from_path, from_name, to_name, to_path, "
         "kind, line) VALUES (?, ?, ?, NULL, ?, ?)",
         [(sp, e.from_name, e.to_name, e.kind, e.line) for e in result.edges])
+    con.execute("DELETE FROM doc_text WHERE path=?", (sp,))
+    if result.text is not None:                # refresh cached doc text for binary docs
+        con.execute("INSERT INTO doc_text(path, text) VALUES (?, ?)", (sp, result.text))
     # Step 1: for symbols this file no longer defines (renamed/removed), NULL the
     # INCOMING edges other files resolved to us. The global re-resolve below only
     # touches to_path IS NULL, so a stale NON-null pointer would otherwise dangle
