@@ -55,6 +55,9 @@ class _Walker:
     def _line(self, node) -> int:
         return node.start_point[0] + 1
 
+    def _end(self, node) -> int:
+        return node.end_point[0] + 1
+
     def visit(self, node) -> None:
         t = node.type
         descended = False
@@ -64,19 +67,22 @@ class _Walker:
             params = _field_text(node, "parameters") or "()"
             qn = self._qual(name)
             kind = "method" if self.classes else "function"
-            self.symbols.append(Symbol(qn, kind, self._line(node), f"function {name}{params}"))
+            self.symbols.append(Symbol(qn, kind, self._line(node),
+                                       f"function {name}{params}", self._end(node)))
             self.funcs.append(qn); self._children(node); self.funcs.pop(); descended = True
 
         elif t == "class_declaration":
             name = _field_text(node, "name") or "?"
-            self.symbols.append(Symbol(self._qual(name), "class", self._line(node), f"class {name}"))
+            self.symbols.append(Symbol(self._qual(name), "class", self._line(node),
+                                       f"class {name}", self._end(node)))
             self.classes.append(name); self._children(node); self.classes.pop(); descended = True
 
         elif t == "method_definition":
             name = _field_text(node, "name") or "?"
             params = _field_text(node, "parameters") or "()"
             qn = self._qual(name)
-            self.symbols.append(Symbol(qn, "method", self._line(node), f"{name}{params}"))
+            self.symbols.append(Symbol(qn, "method", self._line(node),
+                                       f"{name}{params}", self._end(node)))
             self.funcs.append(qn); self._children(node); self.funcs.pop(); descended = True
 
         elif t == "variable_declarator":
@@ -87,7 +93,8 @@ class _Walker:
                 params = _field_text(val, "parameters") or "()"
                 qn = self._qual(name)
                 kind = "method" if self.classes else "function"
-                self.symbols.append(Symbol(qn, kind, self._line(node), f"{name}{params}"))
+                self.symbols.append(Symbol(qn, kind, self._line(node),
+                                           f"{name}{params}", self._end(node)))
                 self.funcs.append(qn); self._children(node); self.funcs.pop(); descended = True
 
         elif t == "call_expression":

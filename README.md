@@ -112,7 +112,7 @@ upstream untouched. Verify with `keymd doctor --wire`.
 
 - **More enforceable than MCP.** MCP only *offers* a tool the agent may ignore; the proxy sits on the one path every token must cross to reach the model, so the summary is *guaranteed* to land before the expensive read.
 - **Not sketchy.** The proxy forwards to your real upstream (Anthropic/OpenAI) **with your own key**. The only thing that leaves your machine is the request that was already going to the LLM — now smaller. No third party, no telemetry.
-- **`keymd_read_full` is confined to the project root** — the proxy will not read `/etc/passwd`, SSH keys, or `.env` even if the model asks.
+- **Reads and edits are confined to the project root** — `keymd_read_full`/`keymd_read_range`/`keymd_read_symbol` won't read, and `keymd_edit` won't write, outside the repo (e.g. `/etc/passwd`, SSH keys, `.env`) even if the model asks. `keymd_edit` only applies an *exact, unique* match, then re-indexes the file so its summary/anchors stay accurate.
 
 ## What's here (status)
 
