@@ -65,6 +65,16 @@ zero answer quality; the token savings come from the *enforced* gate above (the 
 always pull full source via `keymd_read_full` when it needs to). Full methodology + per-task
 numbers: [`benchmarks/ability_eval.md`](benchmarks/ability_eval.md).
 
+**Under the strict *enforced* gate** (summary-first, no raw reads, explicit `keymd_read_full`
+escape — the real product, not a voluntary sim, built deterministically from the live gate by
+[`benchmarks/enforced_gate_eval.py`](benchmarks/enforced_gate_eval.py)): **4/5**, with a
+realized **17.9%** token cut (above the 5.8% voluntary floor; the full 53–78% assumes no
+escalations). The call-graph answered the *locate* task with zero escapes; the single miss was
+a *definitional* question — an enum's values live in the file body, not a signature, so the
+summary couldn't carry them and the agent declined to escalate (one `keymd_read_full` away).
+Honest evidence the gate keeps the agent's ability **when it escalates appropriately** — not a
+rigged 100%.
+
 ## Use keymd from your IDE or framework (attach mode)
 
 IDE agents (Claude Code in VS Code, Codex, Cline, Continue, Cursor) and config-file
