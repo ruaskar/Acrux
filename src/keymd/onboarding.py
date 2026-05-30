@@ -282,6 +282,40 @@ def _ide_entries(host: str, port: int) -> dict:
     }
 
 
+# Agents whose base-URL can be wired automatically by `keymd init -g`. Each value
+# resolves the agent's global config file lazily (Path.home() is read at call time
+# so tests can monkeypatch the entry).
+_AGENT_PATHS = {
+    "claude": lambda: Path.home() / ".claude" / "settings.json",
+}
+
+
+def wire_global(*, agent: str = "claude", undo: bool = False) -> int:
+    """`keymd init -g`: write (or with --undo, remove) the agent's base-URL so it
+    routes through the keymd proxy — instead of the user hand-editing settings.json."""
+    from keymd import wire
+    agent = (agent or "claude").lower()
+    if agent not in _AGENT_PATHS:
+        print(f"keymd init -g: unknown agent '{agent}'. Known: {', '.join(_AGENT_PATHS)}")
+        return 1
+    cfg = _AGENT_PATHS[agent]()
+    if undo:
+        changed = wire.undo_claude(cfg)
+        print(f"unwired keymd from {cfg}" if changed
+              else f"keymd wiring not found in {cfg}")
+        return 0
+    r = resolve()
+    base = _base(r.host, r.port)
+    try:
+        wire.apply_claude(cfg, base)
+    except ValueError as e:
+        print(f"keymd init -g: {e}")
+        return 1
+    print(f"wired {agent} → keymd: set ANTHROPIC_BASE_URL={base} in {cfg}")
+    print("  start the proxy with `keymd up`; undo with `keymd init -g --undo`.")
+    return 0
+
+
 def ide(tool: str | None = None) -> int:
     """Print exact wiring to point an IDE/framework at keymd (attach mode)."""
     r = resolve()

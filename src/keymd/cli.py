@@ -60,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     ini = sp.add_parser("init"); ini.add_argument("path", nargs="?")
     ini.add_argument("--force", action="store_true")
     ini.add_argument("--write-agents", action="store_true")
+    ini.add_argument("-g", "--global", dest="global_wire", action="store_true",
+                     help="globally wire your agent (e.g. Claude Code) to the keymd proxy")
+    ini.add_argument("--agent", default=None,
+                     help="with -g: which agent to wire (default: claude)")
+    ini.add_argument("--undo", action="store_true",
+                     help="with -g: remove the keymd wiring")
     doc = sp.add_parser("doctor")
     doc.add_argument("--wire", action="store_true")
     doc.add_argument("--net", action="store_true")
@@ -135,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
                                     flag_wire=a.wire, flag_upstream=a.upstream)
     elif a.cmd == "init":
         from keymd import onboarding
+        if a.global_wire:
+            return onboarding.wire_global(agent=a.agent, undo=a.undo)
+        if a.undo or a.agent is not None:
+            p.error("--agent/--undo only apply with -g/--global")
         return onboarding.init(path=a.path, force=a.force,
                                write_agents=a.write_agents)
     elif a.cmd == "doctor":
