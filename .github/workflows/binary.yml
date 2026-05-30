@@ -44,6 +44,17 @@ jobs:
           printf 'def f():\n    return 1\n' > "$tmp/a.py"
           ( cd "$tmp" && "$bin" build && "$bin" stats )
 
+      - name: Verify zero-Python (Linux, container with NO python)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          tmp="$(mktemp -d)"; printf 'def f():\n    return 1\n' > "$tmp/a.py"
+          docker run --rm -v "$PWD/dist:/d:ro" -v "$tmp:/w" -w /w debian:bookworm-slim bash -c '
+            set -e
+            apt-get update -qq && apt-get install -y -qq ca-certificates >/dev/null   # HTTPS to PyPI; NOT python
+            if command -v python || command -v python3; then echo "system python present — proof invalid"; exit 1; fi
+            /d/keymd build && /d/keymd stats'
+
       - name: Stage release asset
         shell: bash
         run: |
