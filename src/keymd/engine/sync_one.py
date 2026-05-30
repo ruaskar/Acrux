@@ -60,9 +60,10 @@ def sync_one(src_path: str) -> None:
         (sp, _lang_for(p), _file_sha(p), p.stat().st_mtime, result.line_count,
          1 if os.path.exists(sp[:-len(p.suffix)] + ".key.md") else 0, time.time()))
     con.executemany(
-        "INSERT OR IGNORE INTO symbols(path, name, kind, line, signature) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [(sp, s.name, s.kind, s.line, s.signature) for s in result.symbols])
+        "INSERT OR IGNORE INTO symbols(path, name, kind, line, signature, end_line) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(sp, s.name, s.kind, s.line, s.signature, s.end_line)
+         for s in result.symbols])
     con.executemany(
         "INSERT OR IGNORE INTO edges(from_path, from_name, to_name, to_path, "
         "kind, line) VALUES (?, ?, ?, NULL, ?, ?)",

@@ -14,6 +14,7 @@ class Symbol:
     kind: str            # "function" | "method" | "class"
     line: int
     signature: str | None = None
+    end_line: int | None = None   # last line of the symbol's body (for ranged reads)
 
 
 @dataclass

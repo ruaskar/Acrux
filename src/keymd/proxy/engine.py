@@ -79,6 +79,82 @@ def full(abspath: str) -> str:
     return text
 
 
+def read_range(abspath: str, start: int, end: int) -> str:
+    """Return just lines [start, end] (1-based inclusive) of a file — the cheap
+    ranged read that lets an agent pull a region without the whole file. Confined."""
+    if not _confined(abspath):
+        return f"(refused: {abspath} is outside the project root)"
+    try:
+        lines = Path(abspath).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as e:
+        return f"(error reading {abspath}: {e})"
+    if not lines:
+        return f"({Path(abspath).name} is empty)"
+    start = max(1, start)
+    end = max(start, min(len(lines), end or start))
+    if start > len(lines):
+        return f"(L{start} is past end of file — {len(lines)} lines)"
+    if end - start + 1 > MAX_FULL_LINES:
+        end = start + MAX_FULL_LINES - 1
+    body = "\n".join(lines[start - 1:end])
+    return f"# {Path(abspath).name}  L{start}-{end}\n{body}"
+
+
+def read_symbol(abspath: str, symbol: str) -> str:
+    """Return the source of one symbol (function/class/method) by name, using the
+    indexed line span — so the agent reads exactly the region it cares about."""
+    con = _con_or_none()
+    if con is None:
+        return "(index not built — run `keymd build`)"
+    row = con.execute("SELECT line, end_line FROM symbols WHERE path=? AND name=?",
+                      (abspath, symbol)).fetchone()
+    con.close()
+    if row is None:
+        return (f"(symbol {symbol!r} not found in {Path(abspath).name}; "
+                "call keymd_read for the symbol list)")
+    line, end = row
+    return read_range(abspath, line, end or line)
+
+
+def edit(abspath: str, old: str, new: str) -> str:
+    """Replace an exact, unique `old` snippet with `new`, then re-index the file so
+    the summary/anchors stay fresh. Exact-match (not line-range) is immune to stale
+    line numbers. Confined to the project root."""
+    if not old:
+        return "(edit refused: `old` must not be empty)"
+    real = os.path.realpath(abspath)            # resolve once; read+write+sync use it
+    if not _confined(real):
+        return f"(refused: {abspath} is outside the project root)"
+    try:
+        text = Path(real).read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"(error reading {abspath}: {e})"
+    n = text.count(old)
+    if n == 0:
+        return ("(edit refused: `old` not found — read the region first via "
+                "keymd_read_symbol/keymd_read_range and copy it exactly)")
+    if n > 1:
+        return (f"(edit refused: `old` appears {n} times — add surrounding lines "
+                "to make it unique)")
+    updated = text.replace(old, new, 1)
+    try:
+        Path(real).write_text(updated, encoding="utf-8")
+    except OSError as e:
+        return f"(error writing {abspath}: {e})"
+    # Re-index just this file so anchors/summary reflect the edit immediately.
+    try:
+        from keymd.engine.sync_one import sync_one
+        sync_one(real)
+    except Exception as e:  # a re-index hiccup must not mask the successful write
+        return f"edited {Path(abspath).name} (1 replacement); re-index warning: {e}"
+    note = ""
+    if new:
+        head = updated.count("\n", 0, updated.find(new)) + 1
+        win = "\n".join(updated.splitlines()[head - 1:head - 1 + 6])
+        note = f"\nL{head}+:\n{win}"
+    return f"edited {Path(abspath).name} (1 replacement) and re-indexed.{note}"
+
+
 def impact(abspath: str) -> dict:
     if not _index_ready():
         return {"error": "index not built — run `keymd build`"}

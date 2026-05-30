@@ -117,9 +117,10 @@ def build(verbose: bool = True) -> dict:
              time.time()),
         )
         con.executemany(
-            "INSERT OR IGNORE INTO symbols(path, name, kind, line, signature) "
-            "VALUES (?, ?, ?, ?, ?)",
-            [(sp, s.name, s.kind, s.line, s.signature) for s in result.symbols],
+            "INSERT OR IGNORE INTO symbols(path, name, kind, line, signature, "
+            "end_line) VALUES (?, ?, ?, ?, ?, ?)",
+            [(sp, s.name, s.kind, s.line, s.signature, s.end_line)
+             for s in result.symbols],
         )
         con.executemany(
             "INSERT OR IGNORE INTO edges(from_path, from_name, to_name, "

@@ -60,14 +60,16 @@ class _Analyzer(ast.NodeVisitor):
     def visit_FunctionDef(self, node) -> None:
         qn = ".".join(self.stack + [node.name]) if self.stack else node.name
         kind = "method" if self.stack else "function"
-        self.symbols.append(Symbol(qn, kind, node.lineno, _signature(node)))
+        self.symbols.append(Symbol(qn, kind, node.lineno, _signature(node),
+                                   node.end_lineno))
         self._enter(qn, node)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node) -> None:
         qn = ".".join(self.stack + [node.name]) if self.stack else node.name
-        self.symbols.append(Symbol(qn, "class", node.lineno, _signature(node)))
+        self.symbols.append(Symbol(qn, "class", node.lineno, _signature(node),
+                                   node.end_lineno))
         for base in node.bases:
             tn = _call_name(base)
             if tn:

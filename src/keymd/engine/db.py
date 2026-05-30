@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS symbols (
     kind TEXT NOT NULL,
     line INTEGER NOT NULL,
     signature TEXT,
+    end_line INTEGER,
     PRIMARY KEY (path, name)
 );
 CREATE INDEX IF NOT EXISTS ix_symbols_name ON symbols(name);

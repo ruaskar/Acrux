@@ -24,6 +24,14 @@ def strip_timestamp(text: str) -> str:
                      if not l.startswith(TS_PREFIX))
 
 
+def _anchor(line: int | None, end: int | None) -> str:
+    """ASCII line-range anchor (e.g. '  # L36-45') so an agent can pull/edit just
+    that span via keymd_read_symbol/keymd_read_range without reading the whole file."""
+    if not line:
+        return ""
+    return f"  # L{line}" if (not end or end == line) else f"  # L{line}-{end}"
+
+
 def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
     cur = con.cursor()
     frow = cur.execute(
@@ -33,19 +41,19 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
 
     # API: top-level symbols with signatures, ordered by line.
     cur.execute(
-        "SELECT name, kind, signature FROM symbols "
+        "SELECT name, kind, signature, line, end_line FROM symbols "
         "WHERE path=? AND name NOT LIKE '%.%' ORDER BY line", (src_path,))
     api_lines = []
-    for name, kind, sig in cur.fetchall():
-        api_lines.append(f"  {sig or name}")
+    for name, kind, sig, line, end in cur.fetchall():
+        api_lines.append(f"  {sig or name}{_anchor(line, end)}")
         # include direct methods of a class for context
         cur2 = con.cursor()
         cur2.execute(
-            "SELECT signature, name FROM symbols WHERE path=? "
+            "SELECT signature, name, line, end_line FROM symbols WHERE path=? "
             "AND name LIKE ? AND name NOT LIKE ? ORDER BY line",
             (src_path, f"{name}.%", f"{name}.%.%"))
-        for msig, mname in cur2.fetchall():
-            api_lines.append(f"    {msig or mname}")
+        for msig, mname, mline, mend in cur2.fetchall():
+            api_lines.append(f"    {msig or mname}{_anchor(mline, mend)}")
 
     # deps
     cur.execute("SELECT DISTINCT to_name FROM edges "
