@@ -19,7 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  target: linux-x86_64,   exe: "" }
+          # Build Linux on the OLDEST supported runner glibc (22.04 = 2.35) so the
+          # binary runs on glibc >= 2.35 (Debian 12, Ubuntu 22.04+, …). ubuntu-latest
+          # (24.04 = 2.39) would refuse to run on most current systems.
+          - { os: ubuntu-22.04,   target: linux-x86_64,   exe: "" }
           - { os: macos-13,       target: macos-x86_64,   exe: "" }
           - { os: macos-14,       target: macos-aarch64,  exe: "" }
           - { os: windows-latest, target: windows-x86_64, exe: ".exe" }
@@ -45,7 +48,7 @@ jobs:
           ( cd "$tmp" && "$bin" build && "$bin" stats )
 
       - name: Verify zero-Python (Linux, container with NO python)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.target == 'linux-x86_64'
         shell: bash
         run: |
           tmp="$(mktemp -d)"; printf 'def f():\n    return 1\n' > "$tmp/a.py"
