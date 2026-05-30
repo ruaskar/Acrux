@@ -23,9 +23,11 @@ jobs:
           # binary runs on glibc >= 2.35 (Debian 12, Ubuntu 22.04+, …). ubuntu-latest
           # (24.04 = 2.39) would refuse to run on most current systems.
           - { os: ubuntu-22.04,   target: linux-x86_64,   exe: "" }
-          - { os: macos-13,       target: macos-x86_64,   exe: "" }
           - { os: macos-14,       target: macos-aarch64,  exe: "" }
           - { os: windows-latest, target: windows-x86_64, exe: ".exe" }
+          # macos-x86_64 (Intel) dropped: GitHub's macos-13 runners queue-stall and
+          # would block the release. Apple Silicon (macos-14) covers Macs since 2020;
+          # Intel-Mac users install via pip/uvx. Re-add via a self-hosted runner later.
     steps:
       - uses: actions/checkout@v4
 
