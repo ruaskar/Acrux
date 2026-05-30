@@ -1,12 +1,12 @@
 # keymd
 
-**`pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"` · then `keymd run -- <your agent>`** — a local proxy that gates full file reads behind compact `.key.md` summaries, so your coding agent reads ~15 lines of API + call-graph instead of a 5,000-line file. No model change, your API key never leaves your machine. **Measured on this repo: 53% fewer tokens, 80% fewer lines read.**
+**`pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"` · then `keymd run -- <your agent>`** — a local proxy that gates a full file read behind a compact, **line-anchored** summary, so your agent reads ~15 lines of API + call-graph (or a document's table of contents) instead of a 5,000-line file or a 200-page PDF — then pulls or **edits** just the lines it needs. Works on **code** (Python · JS/TS) and **documents** (Markdown · PDF · Word). No model change, your API key never leaves your machine. **Measured on this repo: 53% fewer tokens, 80% fewer lines read.**
 
-`keymd` runs a localhost proxy in front of your LLM endpoint that **gates a full file read behind a compact `.key.md` summary** — and only pulls the full source when it explicitly needs to. The summaries are deterministic (extracted from the AST, **no LLM call**), committed next to your code, and kept fresh by an incremental call-graph index.
+`keymd` runs a localhost proxy in front of your LLM endpoint that **gates a full file read behind a compact summary** — and only pulls the full source when it explicitly needs to. Code files get an API + call-graph map; **documents** (Markdown/PDF/Word) get a table of contents; and every symbol or section carries a `# L<start>-<end>` **anchor**, so the agent reads — or surgically **edits** — just that region (`keymd_read_symbol` / `keymd_read_range` / `keymd_edit`) instead of the whole file. The summaries are deterministic (extracted from the AST / document structure, **no LLM call**) and kept fresh by an incremental call-graph index.
 
 It is **not** "AI codebase docs." The defensible combination it ships, that nothing else does:
 
-> per-file, git-committed sidecars · a **deterministic AST-structure** section regenerated with no LLM · **served and enforced on every read** by a local proxy · backed by a **live incremental call-graph** index.
+> per-file sidecars for **code and documents** · a **deterministic structure** section regenerated with no LLM · **served and enforced on every read** by a local proxy · with **line anchors** for surgical reads + edits · backed by a **live incremental call-graph** index.
 
 ## Quickstart (one command)
 
@@ -26,6 +26,27 @@ For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): 
 `base_url` at it. Verify anytime with `keymd doctor --wire` (no API spend).
 
 > If `keymd` isn't on PATH (Microsoft-Store / `pip --user` Python), use `python -m keymd …`.
+
+## Summarize documents too — Markdown · PDF · Word
+
+`keymd build` indexes documents alongside code. A long document gets a **table of
+contents** with the same line anchors, so the agent reads the map and pulls one section
+instead of the whole file:
+
+```
+# report.pdf  [pdf · 212 lines]
+sections (L-spans include nested sub-sections):
+  Executive Summary  # L1-2
+  Financials         # L3-9
+  Risks              # L10-24
+    Currency Risk    # L18-24
+```
+
+→ `keymd_read_range(report.pdf, 3, 9)` returns just the Financials text — extracted and
+cached, so the agent never loads the whole binary. Sections come from PDF bookmarks / Word
+heading styles / Markdown headings (else one section per page). Markdown ships in **core**;
+PDF + Word need the `docs` extra (`pip install keymd[docs]`, already in `[all]`). Binary
+docs are **read-only** — `keymd_edit` applies to code/text files.
 
 ## Measured token savings
 
@@ -120,6 +141,8 @@ upstream untouched. Verify with `keymd doctor --wire`.
 |---|---|
 | **Index engine** — tree-sitter call-graph + `.key.md` generator + query CLI | ✅ implemented, tested |
 | **Languages** — Python (stdlib `ast`), JS/TS (tree-sitter) | ✅ Python full; JS/TS symbols/sigs/deps/callees (caller-graph best-effort) |
+| **Documents** — Markdown (core) · PDF + DOCX (`docs` extra) | ✅ table-of-contents summary + section anchors + ranged reads; binary docs read-only |
+| **Region tools** — `keymd_read_symbol` / `keymd_read_range` / `keymd_edit` | ✅ pull or surgically edit a span by anchor; edit re-indexes; confined to the repo |
 | **FS watcher** — keeps sidecars + index live on edits | ✅ implemented, tested |
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
@@ -156,7 +179,7 @@ Verified compatibility (examined May 2026):
 ## Install
 
 ```bash
-pip install -e ".[dev,proxy,watch,lang]"   # engine is dependency-free; extras add proxy/watcher/JS-TS
+pip install -e ".[dev,proxy,watch,lang,docs]"   # engine is dependency-free; extras add proxy / watcher / JS-TS / PDF+DOCX
 ```
 
 > If `keymd` isn't found after install (common with Microsoft Store / `pip --user` Python, whose Scripts dir isn't on PATH), use the PATH-independent form **`python -m keymd ...`** in place of `keymd ...` everywhere below, or add your Python user-Scripts dir to PATH. A virtualenv avoids the issue entirely.
@@ -176,13 +199,19 @@ A generated `.key.md` (deterministic, LLM-optimized, no human-maintained region)
 ```
 # src/foo.py  [python · 153 loc · sha:a2ecd3f3]
 api:
-  def parse(self, stream) -> Iterator[Row]
+  def parse(self, stream) -> Iterator[Row]   # L41-88
 deps: io, .schema, .errors
 calls: schema.validate_row
 called_by:
   Parser.parse ← pipeline.py, batch.py (+3 more)
 refreshed: 2026-05-29T22:00
 ```
+
+The `# L41-88` anchor lets the agent (through the proxy) pull just that function with the
+`keymd_read_symbol(path, "parse")` tool — or `keymd_read_range(path, 41, 88)` — and change it
+with `keymd_edit(path, old, new)`, which applies an exact, unique match and re-indexes the file
+so the anchors stay accurate. (These are virtual tools the model calls over the proxy, not CLI
+commands.)
 
 ## Point an agent at the proxy (non-streaming)
 
