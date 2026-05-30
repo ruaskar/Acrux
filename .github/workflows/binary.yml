@@ -1,0 +1,74 @@
+name: binary
+
+# Compiles the self-contained keymd binary (PyApp) for every platform, smoke-tests
+# its first-run install, and uploads artifacts. On a v* tag it also cuts a Release.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/binary-distribution]
+    tags: ['v*']
+
+permissions:
+  contents: write          # the release job attaches assets
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: linux-x86_64,   exe: "" }
+          - { os: macos-13,       target: macos-x86_64,   exe: "" }
+          - { os: macos-14,       target: macos-aarch64,  exe: "" }
+          - { os: windows-latest, target: windows-x86_64, exe: ".exe" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build binary
+        shell: bash
+        run: bash packaging/build_binary.sh
+
+      - name: Smoke test (first-run install + index a fixture)
+        shell: bash
+        run: |
+          bin="$PWD/dist/keymd${{ matrix.exe }}"
+          tmp="$(mktemp -d)"
+          printf 'def f():\n    return 1\n' > "$tmp/a.py"
+          ( cd "$tmp" && "$bin" build && "$bin" stats )
+
+      - name: Stage release asset
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "dist/keymd${{ matrix.exe }}" "out/keymd-${{ matrix.target }}${{ matrix.exe }}"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keymd-${{ matrix.target }}
+          path: out/keymd-${{ matrix.target }}${{ matrix.exe }}
+          if-no-files-found: error
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -R artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

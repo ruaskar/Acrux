@@ -1,3 +1,8 @@
 # Binary fixtures must never get line-ending conversion (autocrlf would corrupt them).
 *.pdf  binary
 *.docx binary
+
+# Shell scripts + the PyApp env recipe run on Linux/macOS CI — force LF so a
+# Windows checkout (autocrlf) never commits CRLF that would break `bash` there.
+*.sh   text eol=lf
+*.env  text eol=lf
