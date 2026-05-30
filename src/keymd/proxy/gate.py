@@ -14,7 +14,10 @@ from keymd.engine.keymd_render import strip_timestamp
 from keymd.proxy import engine
 from keymd.proxy.adapters.base import ToolCall
 
-READ_TOOLS = {"Read", "read_file", "view", "cat"}
+# Tool names treated as a file read, matched CASE-INSENSITIVELY: Claude Code emits
+# "Read", OpenClaw emits "read" — both must gate. Stored lowercase; compared via
+# call.name.lower() in classify().
+READ_TOOLS = {"read", "read_file", "view", "cat"}
 _PATH_KEYS = ("file_path", "path", "target_file", "filename")
 MARKER_RE = re.compile(r"⟪keymd-summary:(.+?)⟫")
 
@@ -37,7 +40,7 @@ def _extract_path(inp: dict) -> str | None:
 def classify(call: ToolCall, *, summarized: set[str], threshold: int) -> Decision:
     if call.name.startswith("keymd_"):
         return Decision("virtual", call)
-    if call.name in READ_TOOLS:
+    if call.name.lower() in READ_TOOLS:
         raw = _extract_path(call.input)
         if raw:
             ap = engine.canon(raw)
