@@ -46,7 +46,7 @@ def build_sections(heads: list[tuple[int, str, int]], total_lines: int) -> list[
         end = total_lines
         for lvl2, _t, line2 in heads[idx + 1:]:
             if lvl2 <= level:
-                end = line2 - 1
+                end = max(line, line2 - 1)   # never invert when two heads share a line
                 break
         base = label or f"section-{line}"
         name, k = base, 1

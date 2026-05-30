@@ -25,7 +25,9 @@ class DocxParser:
         heads: list[tuple[int, str, int]] = []
         for para in doc.paragraphs:
             lineno = len(lines) + 1                   # 1-based line of this paragraph
-            lines.append(para.text)
+            # one paragraph == one line: fold any soft break so the line index stays
+            # aligned with what read_range later slices from the cached blob.
+            lines.append(para.text.replace("\n", " ").replace("\r", " "))
             style = (para.style.name if para.style else "") or ""
             if style.startswith("Heading "):
                 try:

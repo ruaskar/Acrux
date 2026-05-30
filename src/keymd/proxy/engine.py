@@ -46,7 +46,10 @@ def _doc_text(abspath: str) -> str | None:
     con = _con_or_none()
     if con is None:
         return None
-    row = con.execute("SELECT text FROM doc_text WHERE path=?", (abspath,)).fetchone()
+    # canonicalize so a non-canonical caller can't miss the cache and fall through to
+    # decoding a binary doc as UTF-8 (config.canonical is the key build/sync store under).
+    row = con.execute("SELECT text FROM doc_text WHERE path=?",
+                      (config.canonical(abspath),)).fetchone()
     con.close()
     return row[0] if row else None
 

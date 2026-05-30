@@ -14,6 +14,14 @@ from keymd.proxy import engine
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def test_build_sections_never_inverts_on_shared_line():
+    # two bookmarks pointing at the same page share a line; the span must not invert
+    from keymd.engine.parsers.base import build_sections
+    syms = build_sections([(1, "A", 5), (1, "B", 5)], 10)
+    for s in syms:
+        assert s.end_line >= s.line
+
+
 def _proj(monkeypatch, tmp_path):
     monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
