@@ -2,7 +2,12 @@
 
 **Question:** if an agent reads keymd's compact `.key.md` summaries instead of full
 source, does it get *worse* at answering questions about the code? **Result: no —
-100% accuracy retained on this battery.**
+accuracy holds. 5/5 on the voluntary run, and 15/15 across 3 strict-enforcement
+trials when the agent uses the `keymd_read_full` escape per keymd's own directive.
+Token savings, separately, are *task-shaped*: large on structural / "where is X"
+questions, ~0 on value-lookup questions (where a correct answer means opening the
+file). See the [Enforced-gate variant](#enforced-gate-variant-summary-first-explicit-escape)
+below.**
 
 ## Method (paired clean-context agents + blind judge)
 
@@ -63,3 +68,79 @@ summary.
 - **Caveats:** N=5, single repo, single run, self-reported read-sets, Sonnet agents
   (non-deterministic). Treat as directional. Re-run with a stricter summary-first
   treatment to probe the enforced-gate ceiling.
+
+---
+
+## Enforced-gate variant (summary-first, explicit escape)
+
+The run above is a *floor*: the treatment agent kept a normal Read tool and
+over-read. This variant removes that confound — it answers the **same T1–T5**
+under the **real enforced gate**, served by keymd's actual gate code.
+
+**Method.** `benchmarks/enforced_gate_eval.py` builds each task's treatment
+context from `gate.summary_result` (the exact `.key.md` payload + `⟪keymd-summary:…⟫`
+marker the proxy injects), deterministically. The treatment agent gets **only** that
+context and **no raw source**; if a summary lacks the asked-for fact it must escalate
+with an explicit `keymd_read_full`, served by the same confined `engine.full` the
+proxy uses — every escape **logged and counted**. The escalation instruction mirrors
+keymd's own `SYSTEM_DIRECTIVE` ("call `keymd_read_full` only when the summary is
+genuinely insufficient"). Tokens are deterministic, not self-reported: control = the
+candidate file set read in full; treatment = the enforced payloads **plus** any
+escalated full source. Run **N=3 trials** (Sonnet); a blind Opus judge scores every
+answer against a ground-truth key.
+
+### Accuracy holds; tokens are governed by how often the agent must escalate
+
+The headline number you pick is really a point on a frontier set by the **escalation
+discipline** — and accuracy survives all of them:
+
+| regime | accuracy | token cut (this battery) |
+|---|:--:|:--:|
+| voluntary — agent keeps Read, opens full every time | 5/5 | 5.8% |
+| conservative — *declines* the escape, guesses | 4/5 | 17.9% |
+| **escalate-when-unsure — faithful to keymd's directive (N=3)** | **15/15** | **5.0%** |
+
+The conservative single run's one miss (T1) was the agent **guessing instead of
+escalating** — not a capability loss. Told to escalate when the summary lacks the
+fact (which is what keymd actually instructs), **all 3 trials escalated and scored
+5/5**.
+
+### Per-task, faithful run (escalate-when-unsure, gate @ 75 loc, `tiktoken o200k_base`)
+
+| task | type | control tok | treatment tok | cut | escalated? | ✓ (3 trials) |
+|---|---|--:|--:|--:|:--:|:--:|
+| T1 | comprehension (enum value) | 1,660 | 1,598 | 3.7% | gate.py | 3/3 |
+| T2 | structure (URL strings) | 5,750 | 5,505 | 4.3% | server.py | 3/3 |
+| T3 | trace (marker literal) | 746 | 1,040 | −39.4% | gate.py | 3/3 |
+| T4 | **locate (call-graph)** | 2,350 | 1,542 | **34.4%** | **— none** | 3/3 |
+| T5 | detail/fix (code step) | 1,072 | 1,311 | −22.3% | sync_one.py | 3/3 |
+| **TOTAL** | | **11,578** | **10,996** | **5.0%** | 4/5 | **15/15** |
+
+## Honest reading (enforced)
+
+- **Ability is retained — 15/15.** Under strict enforcement, with the agent using the
+  escape keymd tells it to use, the summary-fed agent answered every task as well as
+  the full-source control. The gate is not a capability tax.
+- **Token savings are task-shaped, and this battery is a worst case for them.** Four
+  of five tasks ask for a **value** — an enum literal (`"gated"`), URL path strings,
+  the marker, a code-level step. A *structural* summary by design carries signatures +
+  the call-graph, **not** values, so a correct answer requires escalating to the full
+  file ⇒ ~0 net saving on that task (T3/T5 even cost more: summary *then* full). The
+  benchmark is value-heavy on purpose — it stresses accuracy, not tokens.
+- **Where the gate wins is visible in the one structural task.** T4 ("which files call
+  `engine.summary`") was answered from the **call-graph alone at −34%**, no escape —
+  both call sites straight from the summary's `called_by`. That is the shape of most
+  real agent work ("understand this module / where do I change X / what depends on Y"),
+  and it is where the corpus-wide **offline 53–78%** comes from: an agent navigates
+  many files by summary and opens full source only for the few it edits.
+- **One concrete keymd improvement this surfaced:** summaries omit module-level
+  constants/enum literals, which forced the escape on T1. Emitting them in
+  `render_keymd` would let definitional questions resolve without a full read.
+- **Reproduce:** `python benchmarks/enforced_gate_eval.py --print T4` prints the exact
+  enforced context (the real gate payload); `--list` shows the per-file gated/token
+  table. Builder covered by `tests/test_enforced_gate_eval.py`.
+- **Caveats:** N=3, single repo, Sonnet agent (non-deterministic); escalation was
+  orchestrated round-by-round (the agent decided *when* to escalate; source served by
+  the real `engine.full`). The 5.0% is specific to this value-heavy battery — a
+  navigation-heavy workload trends toward the offline 53–78%, a deep-edit workload
+  toward 0. Accuracy (the headline) was stable across all three trials.

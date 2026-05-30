@@ -65,6 +65,20 @@ zero answer quality; the token savings come from the *enforced* gate above (the 
 always pull full source via `keymd_read_full` when it needs to). Full methodology + per-task
 numbers: [`benchmarks/ability_eval.md`](benchmarks/ability_eval.md).
 
+**Under the strict *enforced* gate** (summary-first, no raw reads, explicit `keymd_read_full`
+escape — the real product, built deterministically from the live gate by
+[`benchmarks/enforced_gate_eval.py`](benchmarks/enforced_gate_eval.py)), across **3 trials**:
+**15/15 accuracy retained** when the agent uses the escape keymd's own directive tells it to
+use. Token cut is *task-shaped*, not one number: **−34%** on the structural "which files call
+X" task (answered from the call-graph, no escape) but ~0 on value-lookup tasks, where a correct
+answer means opening the file anyway (so the agent escalates and reads it). This battery is
+deliberately value-heavy — a stress test for *accuracy*, not tokens; the corpus-wide structural
+savings are the 53–78% above. Honest evidence the gate **doesn't degrade the agent** — the
+savings just live in navigation, not in value-lookup. (A single earlier run where the agent
+*declined* the escape and guessed scored 4/5 — an escalation-discipline artifact, not a
+capability loss.) Full frontier + per-task numbers:
+[`benchmarks/ability_eval.md`](benchmarks/ability_eval.md).
+
 ## Use keymd from your IDE or framework (attach mode)
 
 IDE agents (Claude Code in VS Code, Codex, Cline, Continue, Cursor) and config-file
