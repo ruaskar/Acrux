@@ -1,19 +1,62 @@
 name: binary
 
-# Compiles the self-contained keymd binary (PyApp) for every platform, smoke-tests
-# its first-run install, and uploads artifacts. On a v* tag it also cuts a Release.
+# Builds the self-contained keymd binary (PyApp) for every platform, smoke-tests its
+# first-run install, and on a NEW version cuts a GitHub Release with the binaries +
+# SHA256SUMS — so `install.sh`/`install.ps1` and `keymd update` always resolve to it.
+#
+# Release is AUTOMATIC: bump `keymd.__version__`, merge to master, and if a release for
+# that version does not already exist this workflow builds it and publishes the release.
+# It is idempotent (a master push that doesn't change the version is a no-op past `check`).
+# Pushing a `v*` tag manually still works as a fallback.
 on:
   workflow_dispatch:
   push:
-    branches: [feat/binary-distribution]
+    branches: [master]
     tags: ['v*']
 
 permissions:
-  contents: write          # the release job attaches assets
+  contents: write          # create the tag/release + attach assets
+
+concurrency:
+  group: binary-release
+  cancel-in-progress: false   # never interrupt an in-flight release
 
 jobs:
+  check:
+    name: release needed?
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      should_release: ${{ steps.decide.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: decide
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
+            # Manual fallback: a pushed v* tag always releases that exact version.
+            version="${GITHUB_REF_NAME#v}"
+            echo "tag push -> release v$version"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            version="$(python3 -c 'import re; print(re.search(r"""__version__\s*=\s*["\x27]([^"\x27]+)""", open("src/keymd/__init__.py").read()).group(1))')"
+            if gh release view "v$version" >/dev/null 2>&1; then
+              echo "release v$version already exists -> nothing to do"
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "no release for v$version yet -> build + publish"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build:
     name: build ${{ matrix.target }}
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -88,9 +131,9 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    name: release v${{ needs.check.outputs.version }}
+    needs: [check, build]
+    if: needs.check.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -100,7 +143,11 @@ jobs:
       - run: ls -R artifacts
       - name: Checksums (keymd update verifies against these)
         run: cd artifacts && sha256sum keymd-* > SHA256SUMS && cat SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - name: Publish release (creates the tag from this commit if needed)
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.check.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: artifacts/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
