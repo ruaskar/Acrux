@@ -54,3 +54,40 @@ def test_extensions_route():
     assert get_parser_for(Path("a.tsx")) is not None
     assert get_parser_for(Path("a.jsx")) is not None
     assert get_parser_for(Path("a.mjs")) is not None
+
+
+# A string DEFAULT value in a JS/TS parameter must render as <str>, never the literal
+# (a hardcoded credential in a default arg would otherwise reach the summary). Param
+# NAMES and non-string defaults / type annotations are kept.
+DEFAULTS = (
+    'export function connect(url = "postgres://admin:p@db/x", retries = 3) {}\n'
+    'const auth = (apiKey = "sk-secret-value", timeout = 30) => apiKey;\n'
+    'class C { send(token = "ghp_xxx", n = 1) {} }\n'
+)
+
+TS_DEFAULTS = (
+    'export function conn(url: string = "postgres://u:p@h/d", n: number = 5): void {}\n'
+)
+
+
+def test_js_string_defaults_are_hidden(tmp_path):
+    f = tmp_path / "d.js"
+    f.write_text(DEFAULTS, encoding="utf-8")
+    by = {s.name: s for s in get_parser_for(f).parse(f).symbols}
+    # secrets gone, param names + numeric defaults kept
+    for nm in ("connect", "auth", "C.send"):
+        sig = by[nm].signature
+        assert '"' not in sig and "'" not in sig, f"{nm} kept a string literal: {sig}"
+    assert "url" in by["connect"].signature and "retries = 3" in by["connect"].signature
+    assert "<str>" in by["connect"].signature
+    assert "apiKey" in by["auth"].signature and "timeout = 30" in by["auth"].signature
+    assert "token" in by["C.send"].signature and "n = 1" in by["C.send"].signature
+
+
+def test_ts_string_default_hidden_annotation_kept(tmp_path):
+    f = tmp_path / "d.ts"
+    f.write_text(TS_DEFAULTS, encoding="utf-8")
+    sig = {s.name: s for s in get_parser_for(f).parse(f).symbols}["conn"].signature
+    assert "postgres://" not in sig and '"' not in sig
+    assert "url: string" in sig and "n: number = 5" in sig   # annotations survive
+    assert "<str>" in sig

@@ -36,6 +36,53 @@ def _field_text(node, name: str) -> str | None:
     return _txt(c) if c is not None else None
 
 
+_STR_NODES = ("string", "template_string")
+# Subtrees to keep verbatim: a type annotation is type info, not a runtime value,
+# so it can't carry a default credential — and in tree-sitter-typescript the
+# `string` TYPE keyword is itself a node of type `string`, so descending into an
+# annotation would clobber `: string` → `: <str>`. Pruning here also keeps literal
+# types (`: "a" | "b"`), matching the Python parser keeping `Literal[...]`.
+_SKIP_SUBTREES = ("type_annotation",)
+
+
+def _collect_str_spans(node, spans: list[tuple[int, int]]) -> None:
+    """(start_byte, end_byte) of every string / template-string DEFAULT-value node.
+    Skips type_annotation subtrees (kept verbatim) and does NOT recurse into a
+    string once found (a template's `${...}` is replaced whole)."""
+    if node.type in _SKIP_SUBTREES:
+        return
+    if node.type in _STR_NODES:
+        spans.append((node.start_byte, node.end_byte))
+        return
+    for c in node.children:
+        _collect_str_spans(c, spans)
+
+
+def _params(node) -> str:
+    """Parameter list as text, with every string/template literal DEFAULT replaced
+    by `<str>`. SECURITY: a parameter's string DEFAULT can hold a hardcoded
+    credential, so — mirroring the Python parser's value-hiding — no string VALUE
+    may appear in a signature. We hide string literals structurally (not by
+    secret-detection), but keep type annotations verbatim (parity with the Python
+    parser, which keeps `Literal[...]`). Param names, numeric / boolean / identifier
+    defaults, and type annotations are all kept."""
+    p = _field(node, "parameters")
+    if p is None:
+        return "()"
+    spans: list[tuple[int, int]] = []
+    _collect_str_spans(p, spans)
+    if not spans:
+        return _txt(p)
+    src, base = p.text, p.start_byte
+    out, cur = bytearray(), base
+    for s, e in sorted(spans):
+        out += src[cur - base:s - base]
+        out += b"<str>"
+        cur = e
+    out += src[cur - base:]
+    return out.decode("utf-8", errors="replace")
+
+
 class _Walker:
     """Recursive descent tracking class + function scope to build qualified
     names and attribute calls to their enclosing function/method."""
@@ -64,7 +111,7 @@ class _Walker:
 
         if t in ("function_declaration", "generator_function_declaration"):
             name = _field_text(node, "name") or "?"
-            params = _field_text(node, "parameters") or "()"
+            params = _params(node)
             qn = self._qual(name)
             kind = "method" if self.classes else "function"
             self.symbols.append(Symbol(qn, kind, self._line(node),
@@ -79,7 +126,7 @@ class _Walker:
 
         elif t == "method_definition":
             name = _field_text(node, "name") or "?"
-            params = _field_text(node, "parameters") or "()"
+            params = _params(node)
             qn = self._qual(name)
             self.symbols.append(Symbol(qn, "method", self._line(node),
                                        f"{name}{params}", self._end(node)))
@@ -90,7 +137,7 @@ class _Walker:
             if val is not None and val.type in (
                     "arrow_function", "function", "function_expression"):
                 name = _field_text(node, "name") or "?"
-                params = _field_text(val, "parameters") or "()"
+                params = _params(val)
                 qn = self._qual(name)
                 kind = "method" if self.classes else "function"
                 self.symbols.append(Symbol(qn, kind, self._line(node),
