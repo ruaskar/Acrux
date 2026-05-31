@@ -81,6 +81,20 @@ def test_final_with_no_tools_returns_immediately(env_proj):
     assert len(calls["bodies"]) == 1
 
 
+def test_no_index_is_transparent_passthrough(env_proj):
+    # env_proj sets KEYMD_INDEX_PATH to a tmp file but we DON'T build it → no index.
+    # keymd must add NOTHING: no virtual tools, no [keymd] directive, one upstream call.
+    resp, calls = _run([_turn(_tool_use("Read", {"file_path": "/x/big.py"}, "t1")),
+                        _final("ok")])
+    assert len(calls["bodies"]) == 1                      # gate loop never ran
+    sent = calls["bodies"][0]
+    assert "tools" not in sent or not any(
+        t.get("name", "").startswith("keymd_") for t in sent["tools"])
+    assert "[keymd]" not in (sent.get("system") or "")     # directive not injected
+    # the original host turn (with the un-gated Read) is returned verbatim
+    assert resp["content"][0]["name"] == "Read"
+
+
 def test_multi_nonhost_turn_answers_every_id_in_order(env_proj):
     # 2 gated reads (different files) + 1 virtual, all non-host → all resolved
     # locally; the next user turn must carry exactly 3 tool_results, ids in order.

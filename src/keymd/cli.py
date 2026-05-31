@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     sv = sp.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8787)
-    sv.add_argument("--threshold", type=int, default=400)
+    sv.add_argument("--threshold", type=int, default=50)
     gd = sp.add_parser("guard")
     gd.add_argument("action", choices=["check-push", "check-dup", "install"])
     gd.add_argument("rest", nargs="*")

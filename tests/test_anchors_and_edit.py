@@ -79,8 +79,8 @@ def test_read_range_truncates_with_notice(tmp_proj):
     big = tmp_proj / "big.txt"
     big.write_text("\n".join(f"line{i}" for i in range(1, 1001)) + "\n",
                    encoding="utf-8")
-    out = engine.read_range(engine.canon(str(big)), 1, 1000)   # 1000 > 800 cap
-    assert "truncated at 800 lines" in out      # never silently cut
+    out = engine.read_range(engine.canon(str(big)), 1, 1000)   # 1000 > 400 cap
+    assert "truncated at 400 lines" in out      # never silently cut
     assert "line1\n" in out                     # head is present
 
 

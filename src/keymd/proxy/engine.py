@@ -23,7 +23,10 @@ from keymd.engine.refresh import _confined
 
 # Cap on keymd_read_full so the model-advertised full-read escape hatch cannot
 # dump a huge file (token/cost/memory) and silently undo the gate's savings.
-MAX_FULL_LINES = 800
+# A full read is re-billed in the re-sent transcript every subsequent turn, so the
+# cap is the recurring tax: 400 lines (the gate threshold's natural ceiling) keeps a
+# genuine escalation useful while halving that per-turn cost vs the old 800.
+MAX_FULL_LINES = 400
 
 
 def canon(path: str) -> str:
