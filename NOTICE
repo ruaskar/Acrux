@@ -1,0 +1,11 @@
+keymd
+Copyright 2026 ruaskar
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The keymd release binaries are built with PyApp: they embed an unmodified CPython
+runtime (Python Software Foundation License) and bundle the third-party libraries
+listed in THIRD_PARTY_LICENSES.md — each distributed under its own license
+(PSF-2.0, MIT, BSD-3-Clause, MPL-2.0, Apache-2.0). Their copyright and permission
+notices are reproduced in THIRD_PARTY_LICENSES.md as required for binary
+redistribution. lxml's wheels statically include libxml2/libxslt (MIT).

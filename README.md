@@ -6,6 +6,12 @@
 
 ### Cut your AI coding agent's token usage by 50–70% — with no loss in answer quality.
 
+*This is the **read-payload reduction** — how much smaller a summary is than the full file —
+aggregated over keymd's own repo (`tiktoken o200k_base`, reproducible with
+`python benchmarks/offline_ab.py`). It's **task-shaped**: large when the agent navigates by
+summary, and near **0** when it must open a file for an exact value (it escalates and reads
+the full source). Savings scale with file size and the gate threshold.*
+
 `keymd` is a local proxy in front of your LLM that swaps every **full file read for a compact,
 line-anchored summary** — an API + call-graph map for code, a table of contents for **PDF / Word /
 Markdown**. Your agent navigates by summary and pulls (or surgically **edits**) only the exact lines
@@ -17,17 +23,24 @@ curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | s
 keymd run -- claude
 ```
 
+> The installer verifies the binary against the release's `SHA256SUMS` before installing. **First run** fetches the dependency wheels from PyPI (a few seconds, needs network); after that keymd runs locally. Not on PyPI yet — Intel Macs / offline installs: `pipx install "keymd[all] @ git+https://github.com/ruaskar/keymd"`.
+
 ### Performance — measured on keymd's own repo · deterministic · `tiktoken o200k_base`
 
 | Workload | Tokens | Lines read |
 |---|--:|--:|
-| Agent reads the whole repo | **−72%** | **−80%** |
-| Realistic gate (files > 75 loc) | **−53%** | — |
-| One large file (`cli.py`, 151 loc) | **−89%** | — |
+| Agent reads the whole repo (every file by summary) | **−71%** | **−81%** |
+| Gate at files > 75 loc | **−57%** | — |
+| One large file (`server.py`, 312 loc) | **−75%** | — |
 
-And it **doesn't dumb the agent down**: a paired-agent A/B scored by a blind judge found accuracy
-**fully retained** — **5/5 vs 5/5** reading summaries instead of source, **15/15** under the strict
-enforced gate. keymd is a token lever, not a capability tax.
+> The production gate's **default threshold is 400 loc** — only larger files are summarized — so
+> savings scale with file size; a compact repo understates them. Regenerate any time with
+> `python benchmarks/offline_ab.py`.
+
+And it **doesn't dumb the agent down**: a small paired-agent A/B (N=3–5, single repo, Sonnet,
+blind judge) found accuracy retained — **5/5** reading summaries instead of source, **15/15**
+under the strict enforced gate (a deliberately *value-heavy* battery that stresses accuracy, not
+tokens). keymd is a token lever, not a capability tax.
 → [full methodology + honest boundaries](#measured-token-savings)
 
 > **Why it's different:** per-file sidecars for **code *and* documents** · a deterministic structure
@@ -207,7 +220,7 @@ upstream untouched. Verify with `keymd doctor --wire`.
 
 keymd is a transparent middleman: it forwards to **your** upstream with **your** key (it injects no key of its own and drops non-standard headers). It works with any framework + model that meets three requirements:
 
-1. **Wire format:** the framework speaks **OpenAI Chat Completions** (`/v1/chat/completions`) or **Anthropic Messages** (`/v1/messages`). No other envelope (OpenAI Responses, raw completions, Gemini, Cohere…) has an adapter.
+1. **Wire format:** the framework speaks **OpenAI Chat Completions** (`/v1/chat/completions`), **OpenAI Responses** (`/v1/responses`), or **Anthropic Messages** (`/v1/messages`) — all three have adapters. Other envelopes (raw completions, Gemini, Cohere…) do not.
 2. **Tool-calling model:** the model emits `tool_calls`/`tool_use` and reads files via a tool named `Read` / `read_file` / `view` / `cat`. (A model that never calls tools → keymd is a transparent pass-through with zero savings.)
 3. **Configurable endpoint:** you can point the framework's `base_url` at `http://localhost:8787`.
 
