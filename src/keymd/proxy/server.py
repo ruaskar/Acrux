@@ -19,6 +19,8 @@ import os
 
 import httpx
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
@@ -229,7 +231,8 @@ def _upstream_error_response(e: "UpstreamError") -> JSONResponse:
 
 
 def build_app(threshold: int = 400, *, upstream: str | None = None,
-              openai_base: str | None = None) -> Starlette:
+              openai_base: str | None = None,
+              allowed_hosts: list[str] | None = None) -> Starlette:
     async def anthropic_route(request: Request):
         body = await request.json()
         hdrs = dict(request.headers)
@@ -296,7 +299,12 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
                                      media_type="text/event-stream")
         return JSONResponse(result)
 
-    return Starlette(routes=[
+    # DNS-rebinding guard: when bound to loopback, reject requests whose Host header
+    # isn't localhost — otherwise a web page can resolve its own domain to 127.0.0.1
+    # and drive keymd_edit / spend the user's key through the victim's browser.
+    middleware = ([Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)]
+                  if allowed_hosts else [])
+    return Starlette(middleware=middleware, routes=[
         Route("/v1/messages/count_tokens", count_tokens_route, methods=["POST"]),
         Route("/v1/messages", anthropic_route, methods=["POST"]),
         Route("/v1/chat/completions", openai_route, methods=["POST"]),
@@ -304,8 +312,15 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
     ])
 
 
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
 def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 400,
           *, upstream: str | None = None, openai_base: str | None = None) -> None:
     import uvicorn
-    uvicorn.run(build_app(threshold=threshold, upstream=upstream, openai_base=openai_base),
+    # Loopback bind (the default) → restrict the Host header to localhost (DNS-rebinding
+    # defense). An explicit non-loopback bind means the user opted into exposure.
+    allowed = ["localhost", "127.0.0.1", "::1"] if host in _LOOPBACK else ["*"]
+    uvicorn.run(build_app(threshold=threshold, upstream=upstream,
+                          openai_base=openai_base, allowed_hosts=allowed),
                 host=host, port=port)
