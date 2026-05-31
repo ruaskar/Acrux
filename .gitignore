@@ -19,3 +19,50 @@ target/
 /IDENTITY.md
 /USER.md
 /HEARTBEAT.md
+
+# --- standard dev cruft -------------------------------------------------------
+# These were previously caught only by a maintainer's global excludesfile, so the
+# tree looked clean locally but a contributor cloning fresh would see them. Keep
+# them in the repo's own .gitignore so it is self-sufficient.
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type-checker / linter caches
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pytype/
+
+# Packaging extras
+*.egg
+pip-wheel-metadata/
+
+# Compiled extensions
+*.so
+*.pyd
+*.dylib
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
