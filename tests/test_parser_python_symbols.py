@@ -63,21 +63,20 @@ def test_constants_enums_and_fields(tmp_path):
     f = tmp_path / "v.py"
     f.write_text(VALUES_SRC, encoding="utf-8")
     r = PythonParser().parse(f)
-    from keymd.engine.parsers.python import MAX_VALUE_LEN
     by_name = {s.name: s for s in r.symbols}
 
-    # module-level scalar + collection constants (value-bearing signature)
+    # NUMERIC constant: value shown verbatim (a number can't carry a credential)
     assert by_name["MAX_DEPS"].kind == "constant"
     assert by_name["MAX_DEPS"].signature == "MAX_DEPS = 10"
+    # collection containing STRINGS collapses to its type (security policy)
     assert by_name["READ_TOOLS"].kind == "constant"
-    assert by_name["READ_TOOLS"].signature == "READ_TOOLS = {'Read', 'cat'}"
+    assert by_name["READ_TOOLS"].signature == "READ_TOOLS = <set>"
 
     # non-literal RHS (a call) is NOT surfaced
     assert "logger" not in by_name
 
-    # long values are truncated with an ellipsis
-    assert by_name["BLURB"].signature.endswith("…")
-    assert len(by_name["BLURB"].signature) <= len("BLURB = ") + MAX_VALUE_LEN + 1
+    # a string value is rendered as its TYPE, never its content (no leak, no truncation)
+    assert by_name["BLURB"].signature == "BLURB = <str>"
 
     # enum members carry their value
     assert by_name["Color.RED"].kind == "enum_member"
@@ -128,4 +127,68 @@ def test_enum_misfire_does_not_leak_nonliteral(tmp_path):
     r = PythonParser().parse(f)
     by_name = {s.name: s for s in r.symbols}
     assert "C.handler" not in by_name              # non-literal RHS not surfaced
-    assert by_name["C.LABEL"].signature == "LABEL = 'x'"
+    assert by_name["C.LABEL"].signature == "LABEL = <str>"   # string value hidden
+
+
+# Every vector an adversarial red-team confirmed leaking past the old regex
+# redaction. Policy now: string/bytes VALUES are never emitted (shown as a type),
+# so none of these can reach a summary regardless of name, shape, length, or nesting.
+SECRETS_SRC = '''
+API_KEY = "sk-ant-api03-aBcDeFgHiJkLmNoPqRsT"
+DATABASE_URL = "postgresql://aotc:aotc2026@localhost:5432/aotc"
+AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE"
+GH_PAT = "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+DATA_BLOB = "''' + ("a" * 70) + '''"
+CONN = "Password=P@ssw0rd123!;Server=x"
+SLACK = "https://hooks.slack.com/services/T024BE7LH/B024BE7LH/abcd1234efghIJKL"
+H = "Bearer aBcDeF1234567890GhIjKl"
+PASSWORD = "hunter2"
+CONFIG = {"password": "hunter2", "host": "db"}
+CREDS = ["user", ["pw", "hunter2"]]
+SECRET_KEY = b"my secret pass"
+
+MAX_DEPS = 10
+NUMS = (1, 2, 3)
+
+class Cfg:
+    token: str = "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+    kind: str = "host"
+
+def connect(password="hunter2", auth="Bearer abc123xyz4567890", verbose=False):
+    return 1
+'''
+
+# substrings that must NEVER appear in any emitted signature
+_LEAK_NEEDLES = [
+    "sk-ant-api03", "aotc2026", "wJalrXUtnFEMI", "ghp_AbCdEf",
+    "a" * 30, "P@ssw0rd123", "abcd1234efghIJKL", "Bearer aBcDeF",
+    "hunter2", "my secret pass", "abc123xyz4567890",
+]
+
+
+def test_no_string_value_can_leak(tmp_path):
+    f = tmp_path / "cfg.py"
+    f.write_text(SECRETS_SRC, encoding="utf-8")
+    by = {s.name: s.signature for s in PythonParser().parse(f).symbols}
+    blob = "\n".join(by.values())
+
+    for needle in _LEAK_NEEDLES:
+        assert needle not in blob, f"secret leaked: {needle!r}"
+
+    # strings/bytes (and collections holding them) render as their TYPE
+    assert by["API_KEY"] == "API_KEY = <str>"
+    assert by["DATABASE_URL"] == "DATABASE_URL = <str>"
+    assert by["DATA_BLOB"] == "DATA_BLOB = <str>"     # 70 chars — old truncation leaked this
+    assert by["CONN"] == "CONN = <str>"
+    assert by["SLACK"] == "SLACK = <str>"
+    assert by["SECRET_KEY"] == "SECRET_KEY = <bytes>"
+    assert by["CONFIG"] == "CONFIG = <dict>"          # secret under innocuous-named dict key
+    assert by["CREDS"] == "CREDS = <list>"            # nested-list secret
+    assert by["Cfg.token"] == "token: str = <str>"    # class attr default
+    # function default-arg string values hidden
+    assert by["connect"] == "def connect(password=<str>, auth=<str>, verbose=False)"
+
+    # numbers / numeric collections / type annotations PRESERVED (#18's value-lookup win)
+    assert by["MAX_DEPS"] == "MAX_DEPS = 10"
+    assert by["NUMS"] == "NUMS = (1, 2, 3)"
+    assert by["Cfg.kind"] == "kind: str = <str>"      # annotation kept, default hidden

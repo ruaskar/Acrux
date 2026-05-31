@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from keymd.engine.parsers.base import ParseResult, build_sections, register
+from keymd.engine.redact import redact_secrets
 
 
 class DocxParser:
@@ -36,8 +37,10 @@ class DocxParser:
                     level = 1
                 heads.append((level, para.text.strip() or f"section-{lineno}", lineno))
         blob = "\n".join(lines)
+        # Scrub the cached text (served verbatim on ranged reads). opaque=False: prose.
         return ParseResult(symbols=build_sections(heads, len(lines)),
-                           edges=[], line_count=len(lines), text=blob)
+                           edges=[], line_count=len(lines),
+                           text=redact_secrets(blob, opaque=False))
 
 
 try:
