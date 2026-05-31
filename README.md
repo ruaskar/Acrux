@@ -60,6 +60,10 @@ vars, and execs your agent **through** keymd (cleanup on exit). Works for any ag
 reads its endpoint from `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` (Claude Code, Codex, Aider,
 OpenAI-compatible CLIs).
 
+**See the savings first, no setup:** `keymd demo` runs a before/after on keymd's own
+source (or `keymd demo <your-repo>`) and prints the read-payload reduction — no agent, no
+API key, no network. The fastest way to know if it's worth wiring up.
+
 For frameworks that take their endpoint from a **config file** (e.g. OpenClaw): run
 `keymd up` (zero-config build + serve + prints the one line) and point the framework's
 `base_url` at it. Verify anytime with `keymd doctor --wire` (no API spend).
