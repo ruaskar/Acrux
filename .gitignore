@@ -9,3 +9,13 @@ __pycache__/
 dist/
 build/
 target/
+
+# keymd sidecar summaries (generated; may surface code values — keep out of commits)
+*.key.md
+
+# stray OpenClaw agent-workspace droppings (not part of keymd)
+.openclaw/
+/SOUL.md
+/IDENTITY.md
+/USER.md
+/HEARTBEAT.md

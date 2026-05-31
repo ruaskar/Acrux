@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from keymd.engine.parsers.base import ParseResult, build_sections, register
+from keymd.engine.redact import redact_secrets
 
 
 def _extract(reader) -> tuple[str, list[int]]:
@@ -71,8 +72,11 @@ class PdfParser:
         if not heads:                                 # structureless PDF → per page
             heads = [(1, f"Page {p + 1}", page_start[p])
                      for p in range(len(page_start))]
+        # Scrub the cached text — it is served verbatim on keymd_read_range /
+        # keymd_read_symbol. opaque=False: prose, so only structured/keyword secrets.
         return ParseResult(symbols=build_sections(heads, total),
-                           edges=[], line_count=total, text=blob)
+                           edges=[], line_count=total,
+                           text=redact_secrets(blob, opaque=False))
 
 
 try:

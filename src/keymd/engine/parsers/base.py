@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from keymd.engine import config
+from keymd.engine.redact import redact_secrets
 
 
 @dataclass
@@ -48,6 +49,9 @@ def build_sections(heads: list[tuple[int, str, int]], total_lines: int) -> list[
             if lvl2 <= level:
                 end = max(line, line2 - 1)   # never invert when two heads share a line
                 break
+        # A doc heading is free text that can embed a secret → scrub it. opaque=False:
+        # prose, so only structured/keyword shapes (not ordinary long words).
+        label = redact_secrets(label, opaque=False)
         base = label or f"section-{line}"
         name, k = base, 1
         while name in used:
