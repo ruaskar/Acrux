@@ -80,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     upd = sp.add_parser("update")
     upd.add_argument("--check", action="store_true",
                      help="report whether a newer release exists, without installing")
+    dm = sp.add_parser("demo")
+    dm.add_argument("path", nargs="?",
+                    help="repo to demo on (default: keymd's own source)")
 
     a = p.parse_args(argv)
 
@@ -166,6 +169,9 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "update":
         from keymd import update as _update
         return _update.update(check_only=a.check)
+    elif a.cmd == "demo":
+        from keymd import demo as _demo
+        return _demo.run_demo(a.path)
     return 0
 
 
