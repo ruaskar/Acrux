@@ -32,7 +32,7 @@ try:
 except Exception:
     pass
 
-SWEEP = (0, 75, 150, 400)        # gate thresholds to sweep (400 = keymd default)
+SWEEP = (0, 50, 75, 150, 400)    # gate thresholds to sweep (50 = keymd default)
 HEADLINE_THR = 75                # threshold the headline is computed at
 
 
@@ -151,7 +151,7 @@ def main(argv=None) -> int:
     print(f"\nHEADLINE  @ threshold {HEADLINE_THR} loc, f=0% fallback:  "
           f"{_pct(full_tok, b_h):.1f}% fewer tokens, "
           f"{_pct(full_lines, sum_lines):.1f}% fewer lines read.")
-    print(f"At the default 400-loc gate, {sum(1 for r in recs if r[2] > 400)} files "
+    print(f"At the default 50-loc gate, {sum(1 for r in recs if r[2] > 50)} files "
           f"qualify here — savings scale with file size, so a compact repo understates it.")
     return 0
 

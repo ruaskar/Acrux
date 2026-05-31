@@ -148,7 +148,7 @@ def run_agent(cmd: list[str], *, root=None, rebuild=False, flag_host=None,
 DEFAULT_TOML = (
     "# keymd.toml — committed; NO secrets (API keys ride on request headers)\n"
     "[keymd]\n"
-    "threshold = 400          # gate files larger than this many loc\n\n"
+    "threshold = 50           # gate files larger than this many loc\n\n"
     "[keymd.serve]\n"
     'host = "127.0.0.1"\n'
     "port = 8787\n"

@@ -15,7 +15,7 @@ from keymd.engine import config
 
 @dataclass
 class Settings:
-    threshold: int = 400
+    threshold: int = 50
     host: str = "127.0.0.1"
     port: int = 8787
     wire: str = "openai"
@@ -37,7 +37,7 @@ def load(root: Path | None = None) -> Settings:
     km = data.get("keymd", {}) or {}
     srv = km.get("serve", {}) or {}
     return Settings(
-        threshold=int(km.get("threshold", 400)),
+        threshold=int(km.get("threshold", 50)),
         host=str(srv.get("host", "127.0.0.1")),
         port=int(srv.get("port", 8787)),
         wire=str(srv.get("wire", "openai")),

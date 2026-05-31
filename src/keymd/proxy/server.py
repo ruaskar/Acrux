@@ -230,7 +230,7 @@ def _upstream_error_response(e: "UpstreamError") -> JSONResponse:
     return JSONResponse(body, status_code=e.status)
 
 
-def build_app(threshold: int = 400, *, upstream: str | None = None,
+def build_app(threshold: int = 50, *, upstream: str | None = None,
               openai_base: str | None = None,
               allowed_hosts: list[str] | None = None) -> Starlette:
     async def anthropic_route(request: Request):
@@ -315,7 +315,7 @@ def build_app(threshold: int = 400, *, upstream: str | None = None,
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
-def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 400,
+def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 50,
           *, upstream: str | None = None, openai_base: str | None = None) -> None:
     import uvicorn
     # Loopback bind (the default) → restrict the Host header to localhost (DNS-rebinding

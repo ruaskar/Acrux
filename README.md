@@ -33,7 +33,7 @@ keymd run -- claude
 | Gate at files > 75 loc | **−57%** | — |
 | One large file (`server.py`, 312 loc) | **−75%** | — |
 
-> The production gate's **default threshold is 400 loc** — only larger files are summarized — so
+> The production gate's **default threshold is 50 loc** — files larger than that are summarized — so
 > savings scale with file size; a compact repo understates them. Regenerate any time with
 > `python benchmarks/offline_ab.py`.
 
@@ -131,9 +131,9 @@ below are measured **on keymd's own repo** (86 files, all small — a compact re
 | Per-file (e.g. `cli.py` 151 loc) | 1,692 tok | 186 tok | 89.0% |
 
 **Fallback sweep** (`f` = fraction of files the agent still reads in full): 71.8% → 46.8%
-(f=25%) → 21.8% (f=50%). **Gate-threshold sweep**: the default 400-loc gate fires on 0
-files in a compact repo; ~75 loc is the sweet spot here (53% cut) — lower the gate for
-small codebases.
+(f=25%) → 21.8% (f=50%). **Gate-threshold sweep**: the default **50-loc** gate summarizes
+every real source file (a 400-loc gate fired on almost none — most modules are 100–350 loc);
+files ≤50 loc pass through, where a summary would be no smaller than the file.
 
 > **Honest boundary:** this is the *read-payload* lever only — not whether cheap summaries
 > make a model read *more* files, not task success, not write-heavy work. The savings are
@@ -232,7 +232,7 @@ Setup:
 ```bash
 keymd build                                            # index your repo (gate files > --threshold loc)
 export KEYMD_OPENAI_BASE=http://your-llm:8000          # or KEYMD_UPSTREAM_BASE for an Anthropic endpoint
-keymd serve --port 8787 --threshold 400                # serve reads env per request (or use `keymd up --upstream …`)
+keymd serve --port 8787 --threshold 50                 # serve reads env per request (or use `keymd up --upstream …`)
 # in your framework: base_url → http://localhost:8787, keep your own API key
 ```
 
@@ -285,7 +285,7 @@ commands.)
 ## Point an agent at the proxy (non-streaming)
 
 ```bash
-keymd build && keymd serve --threshold 400          # gate files > 400 loc
+keymd build && keymd serve --threshold 50           # gate files > 50 loc
 # Claude Code:           ANTHROPIC_BASE_URL=http://localhost:8787
 # Codex / Cline / Aider: OpenAI-compatible base URL → http://localhost:8787
 ```

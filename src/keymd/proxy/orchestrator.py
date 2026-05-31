@@ -15,7 +15,14 @@ MAX_INNER_TURNS = 24
 
 
 async def complete(body: dict, adapter: WireAdapter, upstream, *,
-                   threshold: int = 400) -> dict:
+                   threshold: int = 50) -> dict:
+    # No index → keymd can't summarize anything: every read would pass through and
+    # the virtual tools would all answer "(index not built)". Skip injection AND the
+    # gate loop entirely so keymd is a true transparent pass-through — it adds zero
+    # tokens (no tool defs, no directive) instead of advertising tools that don't work.
+    from keymd.proxy import engine
+    if not engine._index_ready():
+        return await upstream(body)
     body = adapter.inject(body)
     last = None
     for _ in range(MAX_INNER_TURNS):
