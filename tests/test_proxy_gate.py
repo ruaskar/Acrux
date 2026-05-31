@@ -25,6 +25,21 @@ def test_classify(env_proj):
                          summarized=set(), threshold=0).kind == "host"
 
 
+def test_classify_read_tool_case_insensitive(env_proj):
+    # OpenClaw emits a lowercase "read" tool; Claude Code emits "Read". Both — and
+    # any case variant of the known read tools — must gate.
+    index.build(verbose=False)
+    parser_py = str(Path(env_proj) / "pkg" / "parser.py")
+    canon = engine.canon(parser_py)
+    for name in ("read", "Read", "READ", "read_file", "View", "CAT"):
+        d = gate.classify(ToolCall("x", name, {"file_path": parser_py}),
+                          summarized=set(), threshold=0)
+        assert d.kind == "gated" and d.path == canon, f"{name!r} should gate"
+    # a tool that merely contains 'read' is NOT a read tool -> host
+    assert gate.classify(ToolCall("y", "reader", {"file_path": parser_py}),
+                         summarized=set(), threshold=0).kind == "host"
+
+
 def test_summarized_paths_from_transcript():
     msgs = [{"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": "x",
