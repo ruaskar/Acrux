@@ -35,6 +35,25 @@ class ParseResult:
                               # engine caches it in doc_text so reads slice this, not
                               # the binary file. None for code/markdown (read directly).
 
+    def __post_init__(self) -> None:
+        """Uniform secret-shape backstop at the single point EVERY parser passes
+        through — a ParseResult cannot exist without it. Code parsers hide string
+        VALUES structurally (the real guarantee); this catches the residual a
+        structural rule can't reach: a credentialed import specifier
+        (`https://user:pass@host`), where the dep path is useful so we scrub only
+        the embedded credential rather than the whole value, and any signature from
+        a future parser that hasn't yet implemented structural hiding (it fails
+        SAFE). opaque=False: structured/keyword shapes only, so ordinary long
+        identifiers and dep paths aren't mangled."""
+        for s in self.symbols:
+            if s.signature:
+                s.signature = redact_secrets(s.signature, opaque=False)
+        for e in self.edges:
+            if e.to_name:
+                e.to_name = redact_secrets(e.to_name, opaque=False)
+        if self.text:
+            self.text = redact_secrets(self.text, opaque=False)
+
 
 def build_sections(heads: list[tuple[int, str, int]], total_lines: int) -> list[Symbol]:
     """Turn (level, label, line) headings into section Symbols with spans + unique
