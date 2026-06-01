@@ -82,12 +82,58 @@ def impact(path: str) -> dict:
             "unique_files": len(total)}
 
 
-def search(text: str, limit: int = 15) -> list[tuple[str, str]]:
+def _called_by_count(cur, src_path: str) -> int:
+    """How many DISTINCT other files call into a symbol defined in src_path — a
+    cheap call-graph centrality score (a hit in a widely-depended-on file matters
+    more than one in a leaf script)."""
+    cur.execute(
+        "SELECT COUNT(DISTINCT e.from_path) FROM edges e "
+        "WHERE e.kind='call' AND e.from_path != ? AND e.to_name IN "
+        "(SELECT name FROM symbols WHERE path=?)", (src_path, src_path))
+    row = cur.fetchone()
+    return row[0] if row else 0
+
+
+def _top_symbol(cur, src_path: str, term: str) -> str | None:
+    """The most relevant symbol in the hit file: a defined name containing the
+    search term if any, else the file's first symbol — so a result is navigable
+    (points at code), not just a file + snippet."""
+    leaf = term.strip().strip('"').split()[0] if term.strip() else ""
+    if leaf:
+        cur.execute("SELECT name FROM symbols WHERE path=? AND name LIKE ? "
+                    "ORDER BY line LIMIT 1", (src_path, f"%{leaf}%"))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+    cur.execute("SELECT name FROM symbols WHERE path=? ORDER BY line LIMIT 1",
+                (src_path,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def search(text: str, limit: int = 15) -> list[dict]:
+    """Full-text search over rendered summaries, each hit enriched with call-graph
+    context. Returns dicts:
+      {path, snippet, symbol, called_by}
+    `symbol` = the matched/first symbol in the file; `called_by` = number of other
+    files that call into a symbol it defines (graph centrality). Results are sorted
+    by called_by desc (stable, so FTS rank breaks ties), surfacing a hit in a
+    widely-used module above one in a leaf."""
     with _conn() as con:
         cur = con.cursor()
         cur.execute("SELECT path, snippet(keymd_fts, 1, '<<', '>>', '...', 32) "
                     "FROM keymd_fts WHERE keymd_fts MATCH ? LIMIT ?", (text, limit))
-        return [(relpath(p), s) for p, s in cur.fetchall()]
+        rows = cur.fetchall()
+        hits = []
+        for p, snip in rows:
+            hits.append({
+                "path": relpath(p),
+                "snippet": snip,
+                "symbol": _top_symbol(cur, p, text),
+                "called_by": _called_by_count(cur, p),
+            })
+    hits.sort(key=lambda h: h["called_by"], reverse=True)
+    return hits
 
 
 def missing_keymds(top: int = 30) -> list[tuple[int, str]]:

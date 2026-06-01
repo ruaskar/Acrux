@@ -42,7 +42,9 @@ def test_sync_recased_path_no_duplicate_rows(env_proj):
 
 
 def test_refresh_then_search_without_second_build(env_proj):
-    # Fix 5: search works after build -> refresh (refresh now updates FTS).
+    # Fix 5: search works after build -> refresh (refresh keeps FTS current).
+    # Search is now keyed by SOURCE path (FTS over rendered summaries), so a hit
+    # points at parser.py, not the sidecar.
     index.build(verbose=False)
     parser_py = Path(env_proj) / "pkg" / "parser.py"
     key = Path(str(parser_py)[:-3] + ".key.md")
@@ -50,7 +52,7 @@ def test_refresh_then_search_without_second_build(env_proj):
     try:
         assert refresh.refresh_one(str(parser_py)) is True
         hits = query.search("parse_header")
-        assert any("parser.key.md" in p for p, _ in hits)
+        assert any(h["path"].endswith("parser.py") for h in hits)
     finally:
         key.unlink(missing_ok=True)
         Path(str(key) + ".tmp").unlink(missing_ok=True)

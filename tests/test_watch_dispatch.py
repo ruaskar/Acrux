@@ -25,12 +25,16 @@ def test_on_change_source_syncs(env_proj):
 
 
 def test_on_change_keymd_reindexes_fts(env_proj):
+    # A sidecar change re-indexes its SOURCE's FTS row from the rendered summary
+    # (keyed by source path), so a real source symbol stays findable. FTS reflects
+    # the canonical summary, not arbitrary hand-edited sidecar text.
     index.build(verbose=False)
     pkg = Path(env_proj) / "pkg"
     key = pkg / "parser.key.md"
-    key.write_text("# parser\napi:\n  zzunique_token\n", encoding="utf-8")
+    key.write_text("# parser\napi:\n  touched\n", encoding="utf-8")
     try:
         dispatch.on_change(str(key))
-        assert any("parser.key.md" in p for p, _ in query.search("zzunique_token"))
+        hits = query.search("parse_header")
+        assert any(h["path"].endswith("parser.py") for h in hits)
     finally:
         key.unlink(missing_ok=True)

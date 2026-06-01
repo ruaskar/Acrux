@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from keymd.engine import config, db
+from keymd.engine.keymd_render import render_keymd
 from keymd.engine.parsers.base import get_parser_for
 
 
@@ -153,6 +154,22 @@ def build(verbose: bool = True) -> dict:
     """)
     con.commit()
 
+    # FTS over the RENDERED summary of every indexed file (keyed by SOURCE path).
+    # This makes `keymd search` work on a plain build — it indexes the summary text
+    # (signatures, deps, callers) that is ALWAYS present, not just committed .key.md
+    # sidecars (which a fresh build rarely has). Rendered after edge resolution so the
+    # summary's called_by section is complete. The summary already hides string
+    # values (<str>), so nothing a sidecar wouldn't show reaches the index.
+    for (sp,) in con.execute("SELECT path FROM files").fetchall():
+        try:
+            content = render_keymd(con, sp)
+        except Exception:           # one unrenderable file must not abort the build
+            continue                # (it's simply absent from search, still indexed)
+        con.execute("INSERT INTO keymd_fts(path, content) VALUES (?, ?)", (sp, content))
+    con.commit()
+
+    # Track committed .key.md sidecars in the `keymds` table (freshness/auto-refresh
+    # bookkeeping). FTS is fed from rendered summaries above, so no FTS insert here.
     n_keymd = 0
     for k in iter_keymd_files():
         ksp = config.canonical(str(k))
@@ -167,8 +184,6 @@ def build(verbose: bool = True) -> dict:
         con.execute(
             "INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
             "auto_refreshed_at) VALUES (?, ?, ?, NULL)", (ksp, src_path, sha))
-        con.execute("INSERT INTO keymd_fts(path, content) VALUES (?, ?)",
-                    (ksp, content))
         n_keymd += 1
     con.commit()
 
