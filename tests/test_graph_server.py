@@ -147,3 +147,26 @@ def test_api_summary_includes_summary_lead(monkeypatch, tmp_path):
     index.build(verbose=False)
     r = _client().get("/api/summary", params={"path": os.path.join("pkg", "mod.py")})
     assert "summary: Walk sources and store symbols." in r.json()["summary"]
+
+
+def test_api_symbol_returns_detail(env_proj):
+    import os
+    index.build(verbose=False)
+    r = _client().get("/api/symbol", params={"path": os.path.join("pkg", "pipeline.py"), "name": "run"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["name"] == "run" and j["signature"].startswith("def run(")
+    assert any(c["name"] == "parse_header" for c in j["callees"])
+
+
+def test_api_symbol_missing_name_400(env_proj):
+    index.build(verbose=False)
+    r = _client().get("/api/symbol", params={"path": "pkg/pipeline.py"})
+    assert r.status_code == 400
+
+
+def test_api_symbol_refuses_outside_root(env_proj):
+    index.build(verbose=False)
+    r = _client().get("/api/symbol", params={"path": "../../../etc/passwd", "name": "x"})
+    assert r.status_code == 400
+    assert "callees" not in r.json()

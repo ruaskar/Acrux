@@ -39,6 +39,16 @@
   .chip.nav:hover { background: #1f6feb; color: #fff; }
   .chip.dead { opacity: .45; }
   .sig.hl { background: #1f2937; outline: 1px solid #58a6ff; border-radius: 3px; }
+  .sig.rownav { cursor: pointer; border-radius: 3px; }
+  .sig.rownav:hover { background: #161b22; }
+  .fn { font: 13px ui-monospace, monospace; color: #d2a8ff; margin: 0 0 10px; word-break: break-all; }
+  .back { color: #58a6ff; cursor: pointer; }
+  .back:hover { text-decoration: underline; }
+  .cc { font: 12px ui-monospace, monospace; padding: 3px 4px; color: #8b949e;
+        border-bottom: 1px solid #161b22; }
+  .cc.nav { cursor: pointer; color: #c9d1d9; }
+  .cc.nav:hover { background: #1f6feb; color: #fff; }
+  .cc.dead { opacity: .5; }
   .node circle { cursor: pointer; stroke: #0d1117; stroke-width: 1.5px; }
   .node text { fill: #8b949e; font-size: 10px; pointer-events: none; }
   .link { stroke: #30363d; stroke-opacity: 0.7; cursor: pointer; }
@@ -151,8 +161,8 @@ function renderSummary(d, text, highlightSym) {
                        `<div class="summary">${esc(summary)}</div></div>`;
   if (api.length) {
     html += `<div class="card"><div class="lbl">inputs &amp; outputs</div>`;
-    for (const a of api) { const [sig, anc] = splitAnchor(a);
-      html += `<div class="sig" data-sym="${escAttr(sigName(sig))}">${hl(sig)}` +
+    for (const a of api) { const [sig, anc] = splitAnchor(a); const nm = sigName(sig);
+      html += `<div class="sig${nm ? " rownav" : ""}" data-sym="${escAttr(nm)}">${hl(sig)}` +
               `${anc ? `<span class="anchor">${anc}</span>` : ""}</div>`; }
     html += `</div>`;
   }
@@ -187,6 +197,11 @@ function renderSummary(d, text, highlightSym) {
     ev.stopPropagation();
     navigateTo(this.getAttribute("data-file"), this.getAttribute("data-sym"));
   });
+  // clicking a function/class row opens its per-function detail view
+  panel.selectAll(".sig.rownav").on("click", function (ev) {
+    ev.stopPropagation();
+    showSymbol(d.id, this.getAttribute("data-sym"));
+  });
   if (highlightSym) {
     const row = panel.selectAll(".sig").filter(function () {
       return this.getAttribute("data-sym") === highlightSym; });
@@ -203,6 +218,67 @@ function showSummary(d, highlightSym) {
     .then(r => r.json())
     .then(j => renderSummary(d, j.summary || "", highlightSym))
     .catch(() => panel.html(`<h2>${esc(d.id)}</h2><p id="hint">(failed to load)</p>`));
+}
+
+let CUR_FILE = null;   // the file whose function is shown (for same-file detection)
+
+function ccCard(label, items, kind) {     // kind: 'caller' | 'callee'
+  if (!items.length)
+    return `<div class="card"><div class="lbl">${label}</div>` +
+           `<div class="cc dead">none</div></div>`;
+  const rows = items.map(it => {
+    const file = it.file, sym = kind === "caller" ? it.fn : it.name;
+    const nav = file && file !== CUR_FILE ? file : null;   // same-file/stdlib → not navigable
+    const text = kind === "caller" ? `${esc(it.file)}  ${esc(it.fn)}`
+                                   : `${esc(it.name)}${file ? `  ${esc(file)}` : ""}`;
+    return nav
+      ? `<div class="cc nav" data-file="${escAttr(nav)}" data-sym="${escAttr(sym)}">${text}</div>`
+      : `<div class="cc">${text}</div>`;
+  }).join("");
+  return `<div class="card"><div class="lbl">${label}</div>${rows}</div>`;
+}
+
+function showSymbol(fileId, name) {
+  CUR_FILE = fileId;
+  panel.html(`<p id="hint">loading…</p>`);
+  fetch(`/api/symbol?path=${encodeURIComponent(fileId)}&name=${encodeURIComponent(name)}`)
+    .then(r => r.json())
+    .then(j => {
+      const backH = `<h2><span class="back" data-file="${escAttr(fileId)}">← ${esc(fileId)}</span></h2>`;
+      if (j.error === "ambiguous symbol") {     // >1 method shares this leaf → let user pick
+        let hh = backH + `<div class="fn">${esc(j.name)} — which one?</div>`;
+        hh += j.candidates.map(c =>
+          `<div class="cc nav" data-file="${escAttr(fileId)}" data-pick="${escAttr(c.name)}">` +
+          `${esc(c.name)}<span class="anchor">L${c.line}</span></div>`).join("");
+        panel.html(hh);
+        panel.select(".back").on("click", function (ev) { ev.stopPropagation();
+          const d = GRAPH && GRAPH.byId[this.getAttribute("data-file")]; if (d) showSummary(d); });
+        panel.selectAll(".cc.nav").on("click", function (ev) { ev.stopPropagation();
+          showSymbol(this.getAttribute("data-file"), this.getAttribute("data-pick")); });
+        return;
+      }
+      if (j.error) { panel.html(`${backH}<p id="hint">${esc(j.error)}</p>`); return; }
+      let h = backH;
+      h += `<div class="fn">${esc(j.name)}</div>`;
+      if (j.doc) h += `<div class="card"><div class="lbl">summary</div>` +
+                      `<div class="summary">${esc(j.doc)}</div></div>`;
+      h += `<div class="card"><div class="lbl">signature (in / out)</div>` +
+           `<div class="sig">${hl(j.signature || "")}` +
+           `${j.line ? `<span class="anchor">L${j.line}-${j.end_line || j.line}</span>` : ""}</div></div>`;
+      h += ccCard("called by (upstream)", j.callers || [], "caller");
+      h += ccCard("calls (downstream)", j.callees || [], "callee");
+      panel.html(h);
+      panel.select(".back").on("click", function (ev) {
+        ev.stopPropagation();
+        const d = GRAPH && GRAPH.byId[this.getAttribute("data-file")];
+        if (d) showSummary(d);
+      });
+      panel.selectAll(".cc.nav").on("click", function (ev) {
+        ev.stopPropagation();
+        navigateTo(this.getAttribute("data-file"), this.getAttribute("data-sym"));
+      });
+    })
+    .catch(() => panel.html(`<p id="hint">(failed to load symbol)</p>`));
 }
 
 function showEdge(e) {
