@@ -20,6 +20,21 @@
   .call { padding: 2px 0; border-bottom: 1px solid #161b22; }
   .call b { color: #d2a8ff; }
   .call .ln { color: #6e7681; float: right; }
+  .card { margin: 0 0 14px; }
+  .card .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+               color: #6e7681; margin: 0 0 4px; }
+  .summary { font: 13px/1.55 -apple-system, Segoe UI, sans-serif; color: #c9d1d9;
+             background: #161b22; border-left: 2px solid #58a6ff; padding: 8px 10px;
+             border-radius: 3px; }
+  .sig { font: 12px ui-monospace, monospace; color: #c9d1d9; padding: 3px 0;
+         white-space: pre-wrap; word-break: break-word; }
+  .sig .kw { color: #ff7b72; } .sig .nm { color: #d2a8ff; }
+  .sig .ty { color: #79c0ff; } .sig .ar { color: #ff7b72; }
+  .anchor { color: #6e7681; background: #21262d; border-radius: 3px;
+            padding: 0 5px; font-size: 10px; margin-left: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { background: #21262d; border-radius: 10px; padding: 1px 9px; font-size: 11px;
+          color: #8b949e; }
   .node circle { cursor: pointer; stroke: #0d1117; stroke-width: 1.5px; }
   .node text { fill: #8b949e; font-size: 10px; pointer-events: none; }
   .link { stroke: #30363d; stroke-opacity: 0.7; cursor: pointer; }
@@ -50,12 +65,56 @@ svg.call(d3.zoom().scaleExtent([0.15, 4]).on("zoom", e => root.attr("transform",
 
 function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 
+function hl(sig) {           // lightweight signature syntax highlight (escaped first)
+  let s = esc(sig);
+  s = s.replace(/\b(def|class|async|return)\b/g, '<span class="kw">$1</span>');
+  s = s.replace(/(-&gt;)/g, '<span class="ar">$1</span>');
+  s = s.replace(/\b([A-Z][A-Za-z0-9_]*)\b/g, '<span class="ty">$1</span>');
+  return s;
+}
+
+function splitAnchor(line) {            // "  def f() -> X  # L14-19" → [sig, "L14-19"|""]
+  const m = line.match(/^(.*?)\s*#\s*(L\d+(?:-\d+)?)\s*$/);
+  return m ? [m[1].trim(), m[2]] : [line.trim(), ""];
+}
+
+function renderSummary(d, text) {
+  const lines = text.split("\n");
+  const get = pfx => { const l = lines.find(x => x.startsWith(pfx)); return l ? l.slice(pfx.length).trim() : ""; };
+  // api: block = indented lines between "api:" and the next top-level key
+  const api = [];
+  let inApi = false;
+  for (const l of lines) {
+    if (l === "api:") { inApi = true; continue; }
+    if (inApi) { if (/^\S/.test(l)) break; if (l.trim() && l.trim() !== "(none)") api.push(l); }
+  }
+  const summary = get("summary:");
+  const deps = get("deps:"), calls = get("calls:");
+  let html = `<h2>${esc(d.id)}</h2>`;
+  html += `<div class="chips"><span class="chip">${d.loc} loc</span>` +
+          `<span class="chip">called by ${d.called_by}</span></div>`;
+  if (summary) html += `<div class="card"><div class="lbl">summary</div>` +
+                       `<div class="summary">${esc(summary)}</div></div>`;
+  if (api.length) {
+    html += `<div class="card"><div class="lbl">inputs &amp; outputs</div>`;
+    for (const a of api) { const [sig, anc] = splitAnchor(a);
+      html += `<div class="sig">${hl(sig)}${anc ? `<span class="anchor">${anc}</span>` : ""}</div>`; }
+    html += `</div>`;
+  }
+  const chipRow = (lbl, csv) => csv && csv !== "(none)" ?
+    `<div class="card"><div class="lbl">${lbl}</div><div class="chips">` +
+    csv.split(",").map(x => `<span class="chip">${esc(x.trim())}</span>`).join("") +
+    `</div></div>` : "";
+  html += chipRow("dependencies", deps) + chipRow("calls", calls);
+  panel.html(html);
+}
+
 function showSummary(d) {
-  panel.html(`<h2>${esc(d.id)}</h2><p id="hint">loc ${d.loc} &middot; called by ${d.called_by} file(s)</p><pre>loading…</pre>`);
+  panel.html(`<h2>${esc(d.id)}</h2><p id="hint">loading…</p>`);
   fetch("/api/summary?path=" + encodeURIComponent(d.id))
     .then(r => r.json())
-    .then(j => panel.select("pre").text(j.summary || "(no summary)"))
-    .catch(() => panel.select("pre").text("(failed to load summary)"));
+    .then(j => renderSummary(d, j.summary || ""))
+    .catch(() => panel.html(`<h2>${esc(d.id)}</h2><p id="hint">(failed to load)</p>`));
 }
 
 function showEdge(e) {

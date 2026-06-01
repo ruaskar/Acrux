@@ -117,3 +117,20 @@ def test_cli_graph_dispatches_to_serve(monkeypatch, env_proj):
     rc = cli.main(["graph", "--port", "9999"])
     assert rc == 0
     assert called == {"host": "127.0.0.1", "port": 9999}
+
+
+def test_api_summary_includes_summary_lead(monkeypatch, tmp_path):
+    import os
+    import keymd.engine.parsers.python  # noqa: F401
+    proj = tmp_path / "proj"
+    (proj / "pkg").mkdir(parents=True)
+    (proj / "pkg" / "mod.py").write_text(
+        '"""Walk sources and store symbols."""\ndef go(): return 1\n', encoding="utf-8")
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(proj))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
+    from keymd.engine import config, index
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    index.build(verbose=False)
+    r = _client().get("/api/summary", params={"path": os.path.join("pkg", "mod.py")})
+    assert "summary: Walk sources and store symbols." in r.json()["summary"]
