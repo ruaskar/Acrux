@@ -117,6 +117,34 @@ heading styles / Markdown headings (else one section per page). Markdown ships i
 PDF + Word need the `docs` extra (`pip install keymd[docs]`, already in `[all]`). Binary
 docs are **read-only** — `keymd_edit` applies to code/text files.
 
+## See the call graph — `keymd graph`
+
+```bash
+keymd graph          # opens an interactive map of your repo in the browser
+```
+
+Run it in an indexed repo and keymd serves an interactive, force-directed graph of your
+files on a local-only server (an auto-chosen free port — two instances never collide). It's
+a pure read over the index keymd already built — **no re-index, no schema change, fully
+offline** (D3 is vendored, no CDN). Node size reflects call-graph centrality, so the hubs
+your codebase actually leans on stand out at a glance.
+
+The side panel is where the summary work pays off:
+
+- **Click a file node** → its `.key.md`: the **summary** lead (the file's docstring), then a
+  syntax-highlighted **inputs & outputs** list (signatures with `L`-anchors), then
+  **dependencies** and **calls**.
+- **Click a dependency or call chip** → the graph navigates to that file and highlights the
+  function. Stdlib / external / ambiguous targets are shown but greyed (nowhere to jump).
+- **Click a function row** → a focused view of *that function*: its **docstring summary**, its
+  **signature (in / out)**, every caller **(upstream)**, and every callee **(downstream)** —
+  each caller/callee clickable to jump there. A **← back** link returns to the file.
+
+Because summaries flow through the same renderer as everything else, string **values stay
+hidden** (`API_KEY = <str>`) — no secret reaches the browser. While `keymd graph` (or
+`keymd serve`) is running it also keeps the index live: edit a file or add a new one and the
+summaries refresh automatically (`--no-watch` to opt out; needs the `watch` extra).
+
 ## Measured token savings
 
 Deterministic, **no API spend** — full source vs `.key.md` summary, counted with a real
@@ -212,7 +240,8 @@ upstream untouched. Verify with `keymd doctor --wire`.
 | **Languages** — Python (stdlib `ast`), JS/TS (tree-sitter) | ✅ Python full; JS/TS symbols/sigs/deps/callees (caller-graph best-effort) |
 | **Documents** — Markdown (core) · PDF + DOCX (`docs` extra) | ✅ table-of-contents summary + section anchors + ranged reads; binary docs read-only |
 | **Region tools** — `keymd_read_symbol` / `keymd_read_range` / `keymd_edit` | ✅ pull or surgically edit a span by anchor; edit re-indexes; confined to the repo |
-| **FS watcher** — keeps sidecars + index live on edits | ✅ implemented, tested |
+| **Graph viz** — `keymd graph` interactive call-graph + side panel | ✅ force-directed map; node→summary, clickable dep/call chips + per-function detail (callers/callees); localhost, offline (vendored D3) |
+| **FS watcher** — keeps sidecars + index live on edits | ✅ implemented, tested; runs standalone (`keymd watch`) or bundled into `keymd serve` / `keymd graph` (`--no-watch` to disable) |
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
 | **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). Validated against the real `openai` SDK in-process and over a real socket (`python scripts/validate_sse.py`). |
@@ -268,6 +297,7 @@ A generated `.key.md` (deterministic, LLM-optimized, no human-maintained region)
 
 ```
 # src/foo.py  [python · 153 loc · sha:a2ecd3f3]
+summary: foo.py — parse a stream of rows and validate each against the schema.
 api:
   def parse(self, stream) -> Iterator[Row]   # L41-88
 deps: io, .schema, .errors
