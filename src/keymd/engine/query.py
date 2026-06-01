@@ -233,13 +233,25 @@ def symbol_detail(path: str, name: str) -> dict:
     con = db.connect(p)
     try:
         cur = con.cursor()
-        row = cur.execute(
+        # Prefer an EXACT name match (qualified or top-level). Only if there's no exact
+        # match do we consider leaf matches (`%.name`) — and if a leaf is ambiguous
+        # (>1 method/class shares it, e.g. two `__init__`), DON'T guess: return the
+        # candidates so the caller disambiguates. Guessing by name-length silently
+        # returned the wrong symbol's callees/doc.
+        matches = cur.execute(
             "SELECT name, signature, line, end_line FROM symbols "
             "WHERE path=? AND kind IN ('function','method','class') "
-            "AND (name=? OR name LIKE ?) "
-            "ORDER BY (name=?) DESC, length(name) LIMIT 1",
-            (path, name, f"%.{name}", name)).fetchone()
-        if row is None:
+            "AND (name=? OR name LIKE ?) ORDER BY line",
+            (path, name, f"%.{name}")).fetchall()
+        exact = [m for m in matches if m[0] == name]
+        if exact:
+            row = exact[0]
+        elif len(matches) == 1:
+            row = matches[0]
+        elif len(matches) > 1:
+            return {"error": "ambiguous symbol", "name": name,
+                    "candidates": [{"name": m[0], "line": m[2]} for m in matches]}
+        else:
             return {"error": "symbol not found"}
         qn, sig, line, end = row
         callees = []

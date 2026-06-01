@@ -244,8 +244,21 @@ function showSymbol(fileId, name) {
   fetch(`/api/symbol?path=${encodeURIComponent(fileId)}&name=${encodeURIComponent(name)}`)
     .then(r => r.json())
     .then(j => {
-      if (j.error) { panel.html(`<p id="hint">${esc(j.error)}</p>`); return; }
-      let h = `<h2><span class="back" data-file="${escAttr(fileId)}">← ${esc(fileId)}</span></h2>`;
+      const backH = `<h2><span class="back" data-file="${escAttr(fileId)}">← ${esc(fileId)}</span></h2>`;
+      if (j.error === "ambiguous symbol") {     // >1 method shares this leaf → let user pick
+        let hh = backH + `<div class="fn">${esc(j.name)} — which one?</div>`;
+        hh += j.candidates.map(c =>
+          `<div class="cc nav" data-file="${escAttr(fileId)}" data-pick="${escAttr(c.name)}">` +
+          `${esc(c.name)}<span class="anchor">L${c.line}</span></div>`).join("");
+        panel.html(hh);
+        panel.select(".back").on("click", function (ev) { ev.stopPropagation();
+          const d = GRAPH && GRAPH.byId[this.getAttribute("data-file")]; if (d) showSummary(d); });
+        panel.selectAll(".cc.nav").on("click", function (ev) { ev.stopPropagation();
+          showSymbol(this.getAttribute("data-file"), this.getAttribute("data-pick")); });
+        return;
+      }
+      if (j.error) { panel.html(`${backH}<p id="hint">${esc(j.error)}</p>`); return; }
+      let h = backH;
       h += `<div class="fn">${esc(j.name)}</div>`;
       if (j.doc) h += `<div class="card"><div class="lbl">summary</div>` +
                       `<div class="summary">${esc(j.doc)}</div></div>`;

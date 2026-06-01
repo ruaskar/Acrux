@@ -57,6 +57,28 @@ def test_symbol_detail_missing(env_proj):
     assert query.symbol_detail(parser, "nonexistent_fn") == {"error": "symbol not found"}
 
 
+def test_ambiguous_leaf_returns_candidates(monkeypatch, tmp_path):
+    # Two methods share the leaf __init__ → don't silently pick one; return candidates.
+    import keymd.engine.parsers.python  # noqa: F401
+    proj = tmp_path / "proj"
+    (proj / "pkg").mkdir(parents=True)
+    (proj / "pkg" / "m.py").write_text(
+        "class A:\n    def __init__(self):\n        self.x = 1\n\n"
+        "class B:\n    def __init__(self):\n        self.y = 2\n", encoding="utf-8")
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(proj))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    index.build(verbose=False)
+    d = query.symbol_detail(config.canonical(str(proj / "pkg" / "m.py")), "__init__")
+    assert d["error"] == "ambiguous symbol"
+    names = {c["name"] for c in d["candidates"]}
+    assert names == {"A.__init__", "B.__init__"}
+    # an EXACT qualified name still resolves cleanly (no ambiguity)
+    exact = query.symbol_detail(config.canonical(str(proj / "pkg" / "m.py")), "A.__init__")
+    assert exact["name"] == "A.__init__"
+
+
 def test_symbol_detail_no_index(monkeypatch, tmp_path):
     monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "nope.db"))
     monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(tmp_path))
