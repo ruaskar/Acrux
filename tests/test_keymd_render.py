@@ -56,7 +56,9 @@ def test_render_surfaces_constants_enum_and_fields(monkeypatch, tmp_path):
 
     assert "MAX_DEPS = 10" in text
     assert "RED = 1" in text and "GREEN = 2" in text
-    assert "kind: Literal['a', 'b']" in text
+    # string contents inside a Literal are hidden (a Literal can embed a secret);
+    # the type shape is kept, the values are not.
+    assert "kind: Literal[<str>, <str>]" in text
     assert "path: str | None = None" in text
 
 

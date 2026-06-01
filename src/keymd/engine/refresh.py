@@ -63,12 +63,12 @@ def refresh_one(src_path: str) -> bool:
             "INSERT OR REPLACE INTO keymds(path, src_path, sha256, "
             "auto_refreshed_at) VALUES (?, ?, ?, ?)",
             (str(key_path), abs_src, sha, time.time()))
-        # Keep FTS current: build() only fills keymd_fts from sidecars that
-        # already existed, so without this `keymd search` stays empty after the
-        # first build → refresh flow.
-        con.execute("DELETE FROM keymd_fts WHERE path=?", (str(key_path),))
+        # Keep FTS current, keyed by SOURCE path (matching build()'s FTS fill) so a
+        # refreshed file updates its one search row instead of creating a duplicate
+        # under the sidecar path. Content is the rendered summary.
+        con.execute("DELETE FROM keymd_fts WHERE path=?", (abs_src,))
         con.execute("INSERT INTO keymd_fts(path, content) VALUES (?, ?)",
-                    (str(key_path), new_content))
+                    (abs_src, new_content))
         con.commit()
         con.close()
     except sqlite3.Error:

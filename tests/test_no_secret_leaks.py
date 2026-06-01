@@ -48,9 +48,11 @@ _TS = (
     f'const auth = (apiKey: string = "{API}"): string => apiKey;\n'
 )
 _PY = (
+    "from typing import Literal\n"
     f'API_KEY = "{API}"\n'
     f'def connect(url="postgres://admin:{CRED}@db:5432/prod"):\n'
     "    return url\n"
+    f'def mode(m: Literal["{CRED}"]) -> None: ...\n'   # secret inside a type annotation
     "from dataclasses import dataclass\n"
     "@dataclass\n"
     "class Cfg:\n"

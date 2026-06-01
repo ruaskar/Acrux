@@ -46,6 +46,7 @@ class Color(IntEnum):
 @dataclass
 class D:
     kind: Literal["a", "b"]
+    ver: Literal[1, 2]
     path: str | None = None
     x: list = field(default_factory=list)
 
@@ -83,9 +84,13 @@ def test_constants_enums_and_fields(tmp_path):
     assert by_name["Color.RED"].signature == "RED = 1"
     assert by_name["Color.GREEN"].signature == "GREEN = 2"
 
-    # dataclass annotated fields: type shown; literal default shown; factory default hidden
+    # dataclass annotated fields: type shown; literal default shown; factory default hidden.
+    # STRING contents inside an annotation are hidden too (a Literal can embed a secret) —
+    # the shape is kept (`Literal[<str>, <str>]`), the values are not.
     assert by_name["D.kind"].kind == "attribute"
-    assert by_name["D.kind"].signature == "kind: Literal['a', 'b']"
+    assert by_name["D.kind"].signature == "kind: Literal[<str>, <str>]"
+    # numeric Literal contents are PRESERVED (a number can't carry a credential)
+    assert by_name["D.ver"].signature == "ver: Literal[1, 2]"
     assert by_name["D.path"].signature == "path: str | None = None"
     assert by_name["D.x"].signature == "x: list"
 

@@ -120,8 +120,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"    ← {c}")
         print(f"# unique files depending: {res['unique_files']}")
     elif a.cmd == "search":
-        for path, snip in query.search(a.text, a.limit):
-            print(f"  {path}\n    {snip}")
+        for h in query.search(a.text, a.limit):
+            ctx = f"{h['symbol']}" if h.get("symbol") else ""
+            cb = h.get("called_by") or 0
+            meta = f"  [{ctx}· called_by {cb}]" if ctx else f"  [called_by {cb}]"
+            print(f"  {h['path']}{meta}\n    {h['snippet']}")
     elif a.cmd == "missing-keymds":
         for lc, path in query.missing_keymds(a.top):
             print(f"  {lc:5d}L  {path}")
