@@ -103,3 +103,17 @@ def test_api_summary_hides_string_values(monkeypatch, tmp_path):
     body = r.text
     assert "sk-ant-supersecret-DO-NOT-LEAK" not in body   # never leaks the value
     assert "<str>" in body                                # shows the type instead
+
+
+def test_cli_graph_dispatches_to_serve(monkeypatch, env_proj):
+    # `keymd graph` ensures an index then calls graph_server.serve(host, port).
+    called = {}
+
+    def fake_serve(host="127.0.0.1", port=None):
+        called["host"], called["port"] = host, port
+
+    monkeypatch.setattr(graph_server, "serve", fake_serve)
+    from keymd import cli
+    rc = cli.main(["graph", "--port", "9999"])
+    assert rc == 0
+    assert called == {"host": "127.0.0.1", "port": 9999}

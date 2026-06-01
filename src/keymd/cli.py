@@ -44,6 +44,10 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--threshold", type=int, default=50)
+    gph = sp.add_parser("graph")
+    gph.add_argument("--host", default="127.0.0.1")
+    gph.add_argument("--port", type=int, default=None,
+                     help="fixed port; default None = auto-chosen free port (preferred 8788)")
     gd = sp.add_parser("guard")
     gd.add_argument("action", choices=["check-push", "check-dup", "install"])
     gd.add_argument("rest", nargs="*")
@@ -133,6 +137,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"keymd proxy on http://{a.host}:{a.port} "
               f"(threshold={a.threshold} loc)")
         server.serve(host=a.host, port=a.port, threshold=a.threshold)
+    elif a.cmd == "graph":
+        from keymd.engine import config, index
+        from keymd.proxy import graph_server
+        if not config.index_path().exists():       # ensure an index, like other read paths
+            index.build(verbose=False)
+        graph_server.serve(host=a.host, port=a.port)
     elif a.cmd == "guard":
         from keymd.guardrails import cli as gcli
         return gcli.run(a.action, a.rest)
