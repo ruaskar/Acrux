@@ -42,7 +42,9 @@ def _signature(node) -> str:
         return f"class {node.name}({inner})" if inner else f"class {node.name}"
     prefix = "async def " if isinstance(node, ast.AsyncFunctionDef) else "def "
     args = _render_args(node.args)            # hides string/bytes default VALUES
-    ret = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+    # return annotation: hide string contents too (`-> Literal['secret']`), shape kept
+    ret = f" -> {ast.unparse(_HideStrConstants().visit(copy.deepcopy(node.returns)))}" \
+        if node.returns else ""
     return f"{prefix}{node.name}({args}){ret}"
 
 
@@ -72,11 +74,27 @@ def _cap(s: str) -> str:
     return s if len(s) <= MAX_VALUE_LEN else s[:MAX_VALUE_LEN] + "…"
 
 
+class _HideStrConstants(ast.NodeTransformer):
+    """Replace every str/bytes Constant in an annotation with a bare `<str>`/`<bytes>`
+    name, so a string embedded in a type (e.g. `Literal['sk-secret']`) is hidden the
+    SAME structural way assignment values are — the shape stays (`Literal[<str>]`),
+    the content never appears. Numbers/None inside the annotation (e.g. `Literal[1, 2]`)
+    are untouched, since they can't carry a credential."""
+
+    def visit_Constant(self, node):
+        if isinstance(node.value, (str, bytes)):
+            return ast.Name(id="<bytes>" if isinstance(node.value, bytes) else "<str>")
+        return node
+
+
 def _annotation_repr(node) -> str:
-    """One-line, length-capped type annotation. Secret backstop applied BEFORE the
-    length cap (a `Literal['sk-…']` embeds a string; capping first could sever a
-    token so the scrub misses it)."""
-    return _cap(redact_secrets(ast.unparse(node)))
+    """One-line, length-capped type annotation with string CONTENTS structurally
+    hidden. Detecting a secret string by shape is a losing arms race (a short opaque
+    token slips past any regex), so — as with assignment values — we never emit a
+    string literal's content from an annotation; only its type marker. A regex
+    backstop still runs for any non-literal text (e.g. a stringized forward ref)."""
+    safe = _HideStrConstants().visit(copy.deepcopy(node))
+    return _cap(redact_secrets(ast.unparse(safe)))
 
 
 # --- value rendering: HIDE string/bytes values --------------------------------
@@ -118,15 +136,20 @@ def _render_value(node) -> str:
 
 
 def _render_args(args_node) -> str:
-    """ast.unparse of a function's args, but every string/bytes DEFAULT value is
-    replaced by its type (`def login(password="x")` → `password=<str>`).
-    Annotations are kept (types, shown). Operates on a deep copy — never mutates
-    the shared AST."""
+    """ast.unparse of a function's args, with both string DEFAULTS and string
+    CONTENTS of annotations hidden. A default string → its type (`password=<str>`);
+    a string inside a param annotation (`m: Literal['sk-secret']`) → `<str>` too, so
+    a secret can't hide in a type. Annotation SHAPE is kept (`m: Literal[<str>]`).
+    Operates on a deep copy — never mutates the shared AST."""
     a = copy.deepcopy(args_node)
     for defaults in (a.defaults, a.kw_defaults):
         for i, d in enumerate(defaults):
             if d is not None and _has_text(d):
                 defaults[i] = ast.Name(id=_render_value(d))   # '<str>' / '<bytes>' / '<dict>'
+    hide = _HideStrConstants()
+    for arg in (*a.args, *a.posonlyargs, *a.kwonlyargs, a.vararg, a.kwarg):
+        if arg is not None and arg.annotation is not None:
+            arg.annotation = hide.visit(arg.annotation)
     return ast.unparse(a)
 
 

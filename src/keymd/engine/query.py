@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -95,18 +96,16 @@ def _called_by_count(cur, src_path: str) -> int:
 
 
 def _top_symbol(cur, src_path: str, term: str) -> str | None:
-    """The most relevant symbol in the hit file: a defined name containing the
-    search term if any, else the file's first symbol — so a result is navigable
-    (points at code), not just a file + snippet."""
+    """The defined symbol in the hit file whose name contains the search term, so the
+    result is navigable (points at the matched code). Returns None when no DEFINED
+    name matches — the term may have matched a signature/dep/caller line rather than a
+    definition, and returning an unrelated first symbol would mislead the model into
+    `keymd_read_symbol(<wrong name>)`."""
     leaf = term.strip().strip('"').split()[0] if term.strip() else ""
-    if leaf:
-        cur.execute("SELECT name FROM symbols WHERE path=? AND name LIKE ? "
-                    "ORDER BY line LIMIT 1", (src_path, f"%{leaf}%"))
-        row = cur.fetchone()
-        if row:
-            return row[0]
-    cur.execute("SELECT name FROM symbols WHERE path=? ORDER BY line LIMIT 1",
-                (src_path,))
+    if not leaf:
+        return None
+    cur.execute("SELECT name FROM symbols WHERE path=? AND name LIKE ? "
+                "ORDER BY line LIMIT 1", (src_path, f"%{leaf}%"))
     row = cur.fetchone()
     return row[0] if row else None
 
@@ -118,12 +117,31 @@ def search(text: str, limit: int = 15) -> list[dict]:
     `symbol` = the matched/first symbol in the file; `called_by` = number of other
     files that call into a symbol it defines (graph centrality). Results are sorted
     by called_by desc (stable, so FTS rank breaks ties), surfacing a hit in a
-    widely-used module above one in a leaf."""
+    widely-used module above one in a leaf.
+
+    Centrality ranking is applied to a WIDER candidate pool than `limit` (then sliced),
+    so a highly-central hit that ranks low in raw FTS relevance can still surface — a
+    plain `LIMIT ?` would truncate it before the sort ever saw it.
+
+    Tolerates arbitrary model/user text: input that isn't valid FTS5 (`a AND b`,
+    `foo:bar`, an unterminated quote) is retried as one quoted literal phrase, then
+    gives up to an empty list — never raises, so a CLI user or the proxy can't crash
+    it with a stray colon."""
+    pool = max(limit * 4, 50)            # rank over more candidates than we return
     with _conn() as con:
         cur = con.cursor()
-        cur.execute("SELECT path, snippet(keymd_fts, 1, '<<', '>>', '...', 32) "
-                    "FROM keymd_fts WHERE keymd_fts MATCH ? LIMIT ?", (text, limit))
-        rows = cur.fetchall()
+        try:
+            cur.execute("SELECT path, snippet(keymd_fts, 1, '<<', '>>', '...', 32) "
+                        "FROM keymd_fts WHERE keymd_fts MATCH ? LIMIT ?", (text, pool))
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            try:
+                cur.execute("SELECT path, snippet(keymd_fts, 1, '<<', '>>', '...', 32) "
+                            "FROM keymd_fts WHERE keymd_fts MATCH ? LIMIT ?",
+                            ('"' + text.replace('"', '""') + '"', pool))
+                rows = cur.fetchall()
+            except sqlite3.OperationalError:
+                return []
         hits = []
         for p, snip in rows:
             hits.append({
@@ -133,7 +151,7 @@ def search(text: str, limit: int = 15) -> list[dict]:
                 "called_by": _called_by_count(cur, p),
             })
     hits.sort(key=lambda h: h["called_by"], reverse=True)
-    return hits
+    return hits[:limit]            # slice AFTER ranking, so the top-N is by centrality
 
 
 def missing_keymds(top: int = 30) -> list[tuple[int, str]]:
