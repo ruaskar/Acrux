@@ -316,11 +316,21 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 50,
-          *, upstream: str | None = None, openai_base: str | None = None) -> None:
+          *, upstream: str | None = None, openai_base: str | None = None,
+          watch: bool = True) -> None:
     import uvicorn
     # Loopback bind (the default) → restrict the Host header to localhost (DNS-rebinding
     # defense). An explicit non-loopback bind means the user opted into exposure.
     allowed = ["localhost", "127.0.0.1", "::1"] if host in _LOOPBACK else ["*"]
+    if watch:
+        # Keep .key.md + the index fresh on edits/new files made outside keymd_edit
+        # (native Write/Edit, your own editor). Bundled, deterministic — no API spend.
+        from keymd.engine import config
+        from keymd.proxy.live import spawn_watcher
+        if spawn_watcher(str(config.project_root())) is None:
+            print("(live refresh off — `pip install keymd[watch]` to auto-update on edits)")
+        else:
+            print("live refresh on — edits + new files re-index automatically")
     uvicorn.run(build_app(threshold=threshold, upstream=upstream,
                           openai_base=openai_base, allowed_hosts=allowed),
                 host=host, port=port)

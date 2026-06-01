@@ -261,6 +261,7 @@ keymd impact src/foo.py           # who depends on this file
 keymd refresh src/foo.py          # (re)generate src/foo.key.md
 keymd search "parse header"       # FTS over all summaries
 keymd watch                       # keep sidecars + index live on edits
+keymd graph                       # interactive call-graph in your browser (localhost)
 ```
 
 A generated `.key.md` (deterministic, LLM-optimized, no human-maintained region):

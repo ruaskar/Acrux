@@ -12,7 +12,7 @@ from keymd.engine.redact import redact_secrets
 @dataclass
 class Symbol:
     name: str            # qualified name, e.g. "Parser.parse"
-    kind: str            # function|method|class|section|constant|enum_member|attribute
+    kind: str            # function|method|class|section|constant|enum_member|attribute|module_doc
     line: int
     signature: str | None = None
     end_line: int | None = None   # last line of the symbol's body (for ranged reads)

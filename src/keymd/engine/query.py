@@ -154,6 +154,46 @@ def search(text: str, limit: int = 15) -> list[dict]:
     return hits[:limit]            # slice AFTER ranking, so the top-N is by centrality
 
 
+def graph_data() -> dict:
+    """Whole-repo file→file call graph for `keymd graph` — a pure read over the
+    existing `files` + `edges` tables (no schema change, no re-index).
+
+    Returns:
+      {"nodes": [{"id": relpath, "loc": int, "called_by": int}, ...],
+       "edges": [{"from": relpath, "to": relpath,
+                  "calls": [{"from_name": str, "to_name": str, "line": int}, ...]}]}
+
+    `called_by` = number of OTHER files that call into a symbol the node defines
+    (the same centrality `search` uses). Edges group every resolved cross-file call
+    by (from_path, to_path). Degrades to empty (no crash) when no index exists, so
+    the server can still start and render an empty graph."""
+    p = config.index_path()
+    if not p.exists():
+        return {"nodes": [], "edges": []}
+    con = db.connect(p)
+    try:
+        cur = con.cursor()
+        nodes = []
+        cur.execute("SELECT path, line_count FROM files ORDER BY path")
+        for abspath, loc in cur.fetchall():
+            nodes.append({"id": relpath(abspath), "loc": loc,
+                          "called_by": _called_by_count(cur, abspath)})
+        grouped: dict[tuple[str, str], list[dict]] = {}
+        cur.execute(
+            "SELECT from_path, to_path, from_name, to_name, line FROM edges "
+            "WHERE kind='call' AND to_path IS NOT NULL AND from_path != to_path "
+            "ORDER BY from_path, to_path, line")
+        for from_path, to_path, from_name, to_name, line in cur.fetchall():
+            key = (relpath(from_path), relpath(to_path))
+            grouped.setdefault(key, []).append(
+                {"from_name": from_name, "to_name": to_name, "line": line})
+        edges = [{"from": f, "to": t, "calls": calls}
+                 for (f, t), calls in grouped.items()]
+    finally:
+        con.close()
+    return {"nodes": nodes, "edges": edges}
+
+
 def missing_keymds(top: int = 30) -> list[tuple[int, str]]:
     with _conn() as con:
         cur = con.cursor()

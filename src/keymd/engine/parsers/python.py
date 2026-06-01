@@ -135,6 +135,24 @@ def _render_value(node) -> str:
     return _cap(ast.unparse(node))            # numbers / bools / None only
 
 
+_SUMMARY_MAX = 160
+
+
+def _module_summary(tree: ast.Module) -> str | None:
+    """First line of the module docstring, length-capped — a deterministic
+    'what this file does' lead for the summary. None if there is no docstring.
+    The value lands in a Symbol.signature, so it is redacted (opaque=True in
+    PythonParser.parse, then opaque=False in __post_init__): a secret in a
+    docstring can't leak."""
+    doc = ast.get_docstring(tree)
+    if not doc:
+        return None
+    first = next((ln.strip() for ln in doc.splitlines() if ln.strip()), "")
+    if not first:
+        return None
+    return first if len(first) <= _SUMMARY_MAX else first[:_SUMMARY_MAX] + "…"
+
+
 def _render_args(args_node) -> str:
     """ast.unparse of a function's args, with both string DEFAULTS and string
     CONTENTS of annotations hidden. A default string → its type (`password=<str>`);
@@ -284,6 +302,9 @@ class PythonParser:
         az = _Analyzer()
         az.visit(tree)
         syms = _drop_value_collisions(az.symbols)
+        summary = _module_summary(tree)
+        if summary:                     # lead the summary with the module docstring's 1st line
+            syms.insert(0, Symbol("<module>", "module_doc", 1, summary, None))
         for s in syms:                  # backstop: scrub any secret-shaped token left
             if s.signature:             # in an annotation / unparsed form (defense in depth)
                 s.signature = redact_secrets(s.signature)
