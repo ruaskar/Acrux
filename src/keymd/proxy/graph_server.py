@@ -85,12 +85,13 @@ def build_graph_app(*, allowed_hosts: list[str] | None = None) -> Starlette:
     ])
 
 
-def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
+def serve(host: str = "127.0.0.1", port: int | None = None, *, watch: bool = True) -> None:
     """Spawn the graph server, open the browser, and block on uvicorn.
 
     port is None → auto free-port discovery (preferred 8788 → OS fallback).
     port is an int → bind exactly that port; if busy, fail with a clear message
-    (the user named that port, so don't silently move it)."""
+    (the user named that port, so don't silently move it).
+    watch → auto-refresh the index on file edits + new files (bundled watcher)."""
     import webbrowser
 
     import uvicorn
@@ -110,6 +111,12 @@ def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
     allowed = (["localhost", "127.0.0.1", "::1"] if host in _LOOPBACK else ["*"])
     url = f"http://{host}:{actual}"
     print(f"keymd graph on {url}")
+    if watch:
+        from keymd.proxy.live import spawn_watcher
+        if spawn_watcher(str(config.project_root())) is None:
+            print("(live refresh off — `pip install keymd[watch]` to auto-update on edits)")
+        else:
+            print("live refresh on — edits + new files re-index automatically")
     webbrowser.open(url)
     cfg = uvicorn.Config(build_graph_app(allowed_hosts=allowed), log_level="warning")
     uvicorn.Server(cfg).run(sockets=[sock])

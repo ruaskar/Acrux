@@ -106,17 +106,30 @@ def test_api_summary_hides_string_values(monkeypatch, tmp_path):
 
 
 def test_cli_graph_dispatches_to_serve(monkeypatch, env_proj):
-    # `keymd graph` ensures an index then calls graph_server.serve(host, port).
+    # `keymd graph` ensures an index then calls graph_server.serve(host, port, watch).
     called = {}
 
-    def fake_serve(host="127.0.0.1", port=None):
-        called["host"], called["port"] = host, port
+    def fake_serve(host="127.0.0.1", port=None, *, watch=True):
+        called["host"], called["port"], called["watch"] = host, port, watch
 
     monkeypatch.setattr(graph_server, "serve", fake_serve)
     from keymd import cli
     rc = cli.main(["graph", "--port", "9999"])
     assert rc == 0
-    assert called == {"host": "127.0.0.1", "port": 9999}
+    assert called == {"host": "127.0.0.1", "port": 9999, "watch": True}
+
+
+def test_cli_graph_no_watch_flag(monkeypatch, env_proj):
+    called = {}
+
+    def fake_serve(host="127.0.0.1", port=None, *, watch=True):
+        called["watch"] = watch
+
+    monkeypatch.setattr(graph_server, "serve", fake_serve)
+    from keymd import cli
+    rc = cli.main(["graph", "--no-watch"])
+    assert rc == 0
+    assert called["watch"] is False
 
 
 def test_api_summary_includes_summary_lead(monkeypatch, tmp_path):

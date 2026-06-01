@@ -44,10 +44,14 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--threshold", type=int, default=50)
+    sv.add_argument("--no-watch", action="store_true",
+                    help="don't auto-refresh the index on file edits")
     gph = sp.add_parser("graph")
     gph.add_argument("--host", default="127.0.0.1")
     gph.add_argument("--port", type=int, default=None,
                      help="fixed port; default None = auto-chosen free port (preferred 8788)")
+    gph.add_argument("--no-watch", action="store_true",
+                     help="don't auto-refresh the index on file edits")
     gd = sp.add_parser("guard")
     gd.add_argument("action", choices=["check-push", "check-dup", "install"])
     gd.add_argument("rest", nargs="*")
@@ -136,13 +140,14 @@ def main(argv: list[str] | None = None) -> int:
         from keymd.proxy import server  # lazy: proxy extra deps only needed here
         print(f"keymd proxy on http://{a.host}:{a.port} "
               f"(threshold={a.threshold} loc)")
-        server.serve(host=a.host, port=a.port, threshold=a.threshold)
+        server.serve(host=a.host, port=a.port, threshold=a.threshold,
+                     watch=not a.no_watch)
     elif a.cmd == "graph":
         from keymd.engine import config        # `index` is already imported at module level;
         from keymd.proxy import graph_server   # re-importing it here would shadow it function-wide
         if not config.index_path().exists():   # ensure an index, like other read paths
             index.build(verbose=False)
-        graph_server.serve(host=a.host, port=a.port)
+        graph_server.serve(host=a.host, port=a.port, watch=not a.no_watch)
     elif a.cmd == "guard":
         from keymd.guardrails import cli as gcli
         return gcli.run(a.action, a.rest)
