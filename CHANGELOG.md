@@ -4,6 +4,52 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/keymd/releases).
 
+## [0.1.6] — 2026-06-01
+
+### Added
+
+- **`keymd graph`** — an interactive, force-directed call-graph of your repo in the
+  browser, served from a localhost server on an auto-chosen free port (no hardcoded
+  port; two instances never collide). Node size reflects call-graph centrality. The
+  side panel **leads with the file's summary** (its module docstring), then a
+  syntax-highlighted **inputs & outputs** list (signatures with `L`-anchors), then
+  **dependencies** and **calls**. The dep/call chips are **clickable** — they
+  navigate the graph to the target file and highlight the called function. D3 is
+  vendored (no CDN); fully offline. Pure read over the existing index — no schema
+  change, no re-index.
+- **Module-docstring summaries.** The Python parser now captures each file's module
+  docstring (first line) as a `summary:` lead in its `.key.md` — a deterministic
+  "what this file does" with no LLM/API call. Improves `keymd_read` and `keymd
+  search` results, not just the graph. String values in a docstring are redacted
+  (it rides the same secret backstop as other prose, at the stronger opaque bar).
+- **Live index refresh while serving.** `keymd serve` and `keymd graph` now spawn
+  keymd's filesystem watcher in a background thread, so `.key.md` + the index + FTS
+  stay fresh on every edit **and new file** — including edits made with an agent's
+  native tools or your own editor (which the `keymd_edit` tool alone wouldn't see).
+  Opt out with `--no-watch`; degrades gracefully to a one-line hint if the `watch`
+  extra (watchdog) isn't installed.
+
+### Changed
+
+- **`keymd search` works on a plain build.** Full-text search now indexes the
+  rendered summaries of every file (consistently across build/refresh/sync/watch),
+  so it returns results immediately after `keymd build` instead of only over
+  committed `.key.md` sidecars. Hits are enriched with call-graph context and ranked
+  by centrality (a match in a widely-depended-on module surfaces above a leaf), with
+  ranking applied to a wider candidate pool than the limit so a central hit isn't
+  truncated before it's seen. (Search work landed on master after v0.1.5; this is
+  its first release to the binary.)
+
+### Security
+
+- **String contents inside type annotations are hidden structurally.** A string in
+  an annotation (e.g. `Literal['secret']`) now renders as `<str>` via an AST
+  transform, matching the value-hiding rule for assignments — closing a path where a
+  short, opaque, non-provider-shaped secret in a `Literal[...]` could reach a summary
+  (and the search index / `keymd_read`). Numeric `Literal[...]` values are kept.
+
+[0.1.6]: https://github.com/ruaskar/keymd/releases/tag/v0.1.6
+
 ## [0.1.5] — 2026-06-01
 
 ### Changed
