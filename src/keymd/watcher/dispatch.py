@@ -40,11 +40,20 @@ def _reindex_keymd(path: str) -> None:
 
 
 def on_change(path: str) -> None:
-    """Single entry point. Canonicalizes to the index's resolved key first."""
+    """Single entry point. Canonicalizes to the index's resolved key first.
+
+    A single file event must NEVER kill the watcher: when keymd_edit (the proxy)
+    and the filesystem watcher both re-sync the same file, they can collide on the
+    sidecar `os.replace` (WinError 32) or a transient DB lock. Swallowing here keeps
+    the bundled flush-loop thread (and the `keymd watch` process) alive — the file's
+    next debounced event re-syncs it, so the miss is self-healing, not permanent."""
     if not config.index_path().exists():
         return
     path = config.canonical(path)
-    if path.endswith(".key.md"):
-        _reindex_keymd(path)
-    elif get_parser_for(Path(path)) is not None:
-        sync_one(path)
+    try:
+        if path.endswith(".key.md"):
+            _reindex_keymd(path)
+        elif get_parser_for(Path(path)) is not None:
+            sync_one(path)
+    except Exception:           # transient collision / lock / parse hiccup — self-heals next event
+        pass

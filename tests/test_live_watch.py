@@ -41,6 +41,29 @@ def test_spawn_watcher_refreshes_on_new_file(monkeypatch, tmp_path):
         obs.join()
 
 
+def test_on_change_swallows_sync_exception(monkeypatch, tmp_path):
+    # A collision/lock during sync_one must NOT propagate — else it kills the
+    # flush-loop thread (live-refresh silently dies). Regression for the adversarial
+    # HIGH finding: keymd_edit + watcher both re-sync a file → os.replace WinError 32.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text("def a(): return 1\n", encoding="utf-8")
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(proj))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    index.build(verbose=False)
+
+    from keymd.watcher import dispatch
+
+    def boom(_):
+        raise PermissionError("[WinError 32] file in use")
+
+    monkeypatch.setattr(dispatch, "sync_one", boom)
+    # must return normally, not raise
+    dispatch.on_change(str(proj / "a.py"))
+
+
 def test_spawn_watcher_returns_none_without_watchdog(monkeypatch, tmp_path):
     # Simulate the extra being absent → graceful None, no raise.
     import builtins

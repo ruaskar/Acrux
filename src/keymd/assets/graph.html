@@ -91,8 +91,8 @@ function renderSummary(d, text) {
   const summary = get("summary:");
   const deps = get("deps:"), calls = get("calls:");
   let html = `<h2>${esc(d.id)}</h2>`;
-  html += `<div class="chips"><span class="chip">${d.loc} loc</span>` +
-          `<span class="chip">called by ${d.called_by}</span></div>`;
+  html += `<div class="chips"><span class="chip">${esc(d.loc)} loc</span>` +
+          `<span class="chip">called by ${esc(d.called_by)}</span></div>`;
   if (summary) html += `<div class="card"><div class="lbl">summary</div>` +
                        `<div class="summary">${esc(summary)}</div></div>`;
   if (api.length) {
