@@ -4,6 +4,26 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/keymd/releases).
 
+## [0.1.8] — 2026-06-02
+
+### Fixed
+
+- **Install no longer hangs on a fresh machine.** keymd's optional dependencies were
+  declared with lower bounds only (e.g. `starlette>=0.37`, which admits ~195 candidate
+  releases), and no lock file shipped — so pip's resolver could backtrack across a huge
+  version space on first install (and on the binary's first-run `pip install keymd[all]`).
+  Every extra now carries an upper bound (`starlette>=0.37,<2`, `watchdog>=4,<7`, …) so
+  the resolver settles immediately; the bounds travel in the wheel metadata, so the binary
+  install is fixed too. A clean-venv resolve now completes in seconds instead of backtracking.
+
+### Added
+
+- **`requirements.lock`** — exact, test-verified pins of every optional dependency. Install
+  deterministically with `pip install -c requirements.lock -e ".[all]"`. README documents it
+  plus a `--prefer-binary` tip for native-dependency (lxml) source-build stalls.
+
+[0.1.8]: https://github.com/ruaskar/keymd/releases/tag/v0.1.8
+
 ## [0.1.7] — 2026-06-01
 
 ### Added
