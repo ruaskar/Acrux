@@ -100,3 +100,25 @@ def test_render_idempotent_modulo_timestamp(env_proj):
     b = keymd_render.strip_timestamp(keymd_render.render_keymd(con, parser_path))
     assert a == b
     con.close()
+
+
+def test_render_leads_with_summary(monkeypatch, tmp_path):
+    import keymd.engine.parsers.python  # noqa: F401
+    proj = tmp_path / "proj"
+    (proj / "pkg").mkdir(parents=True)
+    (proj / "pkg" / "mod.py").write_text(
+        '"""Walk sources and store symbols."""\n\ndef go():\n    return 1\n', encoding="utf-8")
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(proj))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    index.build(verbose=False)
+    con = db.connect(config.index_path())
+    text = keymd_render.render_keymd(con, config.canonical(str(proj / "pkg" / "mod.py")))
+    con.close()
+    lines = text.splitlines()
+    assert any(l.startswith("summary: Walk sources and store symbols.") for l in lines)
+    # summary appears BEFORE the api: block, and <module> is NOT listed as an api symbol
+    summary_idx = next(i for i, l in enumerate(lines) if l.startswith("summary:"))
+    assert summary_idx < lines.index("api:")
+    assert "<module>" not in text

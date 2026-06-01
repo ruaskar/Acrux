@@ -159,3 +159,28 @@ def test_every_registered_extension_has_leak_coverage():
         f"coverage in test_no_secret_leaks.py — add a fixture so the no-leak "
         f"guarantee is proven for them"
     )
+
+
+def test_docstring_secret_is_redacted(tmp_path):
+    """A keyworded secret in a module docstring must not reach the summary lead."""
+    from keymd.engine.parsers.python import PythonParser
+    f = tmp_path / "leaky.py"
+    f.write_text('"""Connects with api_key=sk-ant-SECRETSECRETSECRET123456."""\ndef go(): pass\n',
+                 encoding="utf-8")
+    r = PythonParser().parse(f)
+    doc = {s.name: s for s in r.symbols}["<module>"]
+    assert "sk-ant-SECRETSECRETSECRET123456" not in doc.signature   # keyworded -> redacted
+    assert "<redacted>" in doc.signature
+
+
+def test_docstring_bare_opaque_blob_redacted(tmp_path):
+    """No keyword, just a long opaque token -- caught by the parser's opaque=True pass,
+    which runs BEFORE __post_init__'s opaque=False. Proves the stronger bar for docstrings."""
+    from keymd.engine.parsers.python import PythonParser
+    f = tmp_path / "blob.py"
+    f.write_text('"""Default token deadbeef0123456789abcdef0123456789abcdef00 used here."""\n'
+                 'def go(): pass\n', encoding="utf-8")
+    r = PythonParser().parse(f)
+    sig = {s.name: s for s in r.symbols}["<module>"].signature
+    assert "deadbeef0123456789abcdef0123456789abcdef00" not in sig
+    assert "<redacted>" in sig

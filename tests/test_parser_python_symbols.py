@@ -197,3 +197,31 @@ def test_no_string_value_can_leak(tmp_path):
     assert by["MAX_DEPS"] == "MAX_DEPS = 10"
     assert by["NUMS"] == "NUMS = (1, 2, 3)"
     assert by["Cfg.kind"] == "kind: str = <str>"      # annotation kept, default hidden
+
+
+def test_module_docstring_captured_as_symbol(tmp_path):
+    f = tmp_path / "m.py"
+    f.write_text('"""Build the index: walk sources, parse, store symbols.\n\nMore detail here.\n"""\n\ndef go():\n    return 1\n', encoding="utf-8")
+    r = PythonParser().parse(f)
+    by_name = {s.name: s for s in r.symbols}
+    assert "<module>" in by_name
+    doc = by_name["<module>"]
+    assert doc.kind == "module_doc"
+    assert doc.signature == "Build the index: walk sources, parse, store symbols."  # first line only
+    assert doc.line == 1
+
+
+def test_no_module_doc_symbol_when_absent(tmp_path):
+    f = tmp_path / "n.py"
+    f.write_text("import os\n\ndef go():\n    return os.getcwd()\n", encoding="utf-8")
+    r = PythonParser().parse(f)
+    assert "<module>" not in {s.name for s in r.symbols}
+
+
+def test_module_docstring_first_line_capped(tmp_path):
+    f = tmp_path / "long.py"
+    long = "x" * 300
+    f.write_text(f'"""{long}"""\n', encoding="utf-8")
+    r = PythonParser().parse(f)
+    sig = {s.name: s for s in r.symbols}["<module>"].signature
+    assert len(sig) <= 161 and sig.endswith("…")   # capped at 160 + ellipsis

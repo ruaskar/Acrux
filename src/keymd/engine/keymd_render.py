@@ -63,10 +63,12 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
     if lang in _DOC_LANGS:          # documents get a Table-of-Contents, not api/deps
         return _render_doc(con, src_path, lang, loc, sha)
 
-    # API: top-level symbols with signatures, ordered by line.
+    # API: top-level symbols with signatures, ordered by line. The module_doc
+    # pseudo-symbol is the summary lead (emitted below the header), not an api entry.
     cur.execute(
         "SELECT name, kind, signature, line, end_line FROM symbols "
-        "WHERE path=? AND name NOT LIKE '%.%' ORDER BY line", (src_path,))
+        "WHERE path=? AND name NOT LIKE '%.%' AND kind != 'module_doc' ORDER BY line",
+        (src_path,))
     api_lines = []
     for name, kind, sig, line, end in cur.fetchall():
         api_lines.append(f"  {sig or name}{_anchor(line, end)}")
@@ -114,6 +116,11 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
 
     out: list[str] = []
     out.append(f"# {relpath(src_path)}  [{lang} · {loc} loc · sha:{sha[:8]}]")
+    drow = cur.execute(
+        "SELECT signature FROM symbols WHERE path=? AND kind='module_doc' LIMIT 1",
+        (src_path,)).fetchone()
+    if drow and drow[0]:
+        out.append(f"summary: {drow[0]}")
     out.append("api:")
     out.extend(api_lines or ["  (none)"])
     out.append("deps: " + (", ".join(deps_show) if deps_show else "(none)"))
