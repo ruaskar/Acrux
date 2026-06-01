@@ -138,9 +138,9 @@ def main(argv: list[str] | None = None) -> int:
               f"(threshold={a.threshold} loc)")
         server.serve(host=a.host, port=a.port, threshold=a.threshold)
     elif a.cmd == "graph":
-        from keymd.engine import config, index
-        from keymd.proxy import graph_server
-        if not config.index_path().exists():       # ensure an index, like other read paths
+        from keymd.engine import config        # `index` is already imported at module level;
+        from keymd.proxy import graph_server   # re-importing it here would shadow it function-wide
+        if not config.index_path().exists():   # ensure an index, like other read paths
             index.build(verbose=False)
         graph_server.serve(host=a.host, port=a.port)
     elif a.cmd == "guard":
