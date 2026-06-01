@@ -35,6 +35,10 @@
   .chips { display: flex; flex-wrap: wrap; gap: 5px; }
   .chip { background: #21262d; border-radius: 10px; padding: 1px 9px; font-size: 11px;
           color: #8b949e; }
+  .chip.nav { cursor: pointer; color: #c9d1d9; }
+  .chip.nav:hover { background: #1f6feb; color: #fff; }
+  .chip.dead { opacity: .45; }
+  .sig.hl { background: #1f2937; outline: 1px solid #58a6ff; border-radius: 3px; }
   .node circle { cursor: pointer; stroke: #0d1117; stroke-width: 1.5px; }
   .node text { fill: #8b949e; font-size: 10px; pointer-events: none; }
   .link { stroke: #30363d; stroke-opacity: 0.7; cursor: pointer; }
@@ -61,9 +65,16 @@ svg.append("defs").append("marker")
   .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#30363d");
 
 const root = svg.append("g");
-svg.call(d3.zoom().scaleExtent([0.15, 4]).on("zoom", e => root.attr("transform", e.transform)));
+const zoomB = d3.zoom().scaleExtent([0.15, 4]).on("zoom", e => root.attr("transform", e.transform));
+svg.call(zoomB);
+
+let GRAPH = null;   // {byId, links, node, link, sim, modmap} — set once /api/graph loads
 
 function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function escAttr(s) {        // escape for an HTML attribute value (quotes too) — chips carry
+  return String(s).replace(/[&<>"']/g, c =>     // file paths + symbol names in data-* attrs
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
 
 function hl(sig) {           // lightweight signature syntax highlight (escaped first)
   let s = esc(sig);
@@ -78,7 +89,50 @@ function splitAnchor(line) {            // "  def f() -> X  # L14-19" → [sig, 
   return m ? [m[1].trim(), m[2]] : [line.trim(), ""];
 }
 
-function renderSummary(d, text) {
+function sigName(sig) {                 // "def canonical(p) -> str" → "canonical"
+  const m = sig.match(/(?:def|class)\s+([A-Za-z0-9_]+)/);
+  return m ? m[1] : "";
+}
+
+function buildModMap(nodes) {           // dotted module path → file id (all path tails)
+  const m = {};
+  for (const n of nodes) {
+    const segs = n.id.split(/[/\\]/);
+    segs[segs.length - 1] = segs[segs.length - 1].replace(/\.[^.]+$/, "");
+    for (let i = 0; i < segs.length; i++) {
+      const key = segs.slice(i).join(".");
+      if (!(key in m)) m[key] = n.id;   // keep first; lookup tries longest prefix first
+    }
+  }
+  return m;
+}
+
+function resolveDep(dep) {              // import name → {file, sym} | null (stdlib/external)
+  const parts = dep.replace(/^\.+/, "").split(".");
+  for (let k = parts.length; k > 0; k--) {
+    const pref = parts.slice(0, k).join(".");
+    if (GRAPH && GRAPH.modmap[pref])
+      return { file: GRAPH.modmap[pref], sym: parts.slice(k).join(".") };
+  }
+  return null;
+}
+
+function navigateTo(fileId, sym) {      // chip click: focus the target file node + its fn
+  if (!GRAPH) return;
+  const d = GRAPH.byId[fileId];
+  if (!d) return;
+  GRAPH.node.classed("sel", false);
+  GRAPH.node.filter(n => n.id === fileId).classed("sel", true);
+  GRAPH.link.classed("sel", false);
+  if (d.x != null && d.y != null) {     // pan+zoom to center the node (sim has positioned it)
+    const k = 1.3;
+    svg.transition().duration(600).call(
+      zoomB.transform, d3.zoomIdentity.translate(W / 2 - d.x * k, H / 2 - d.y * k).scale(k));
+  }
+  showSummary(d, sym);                  // load its panel, highlighting the called symbol
+}
+
+function renderSummary(d, text, highlightSym) {
   const lines = text.split("\n");
   const get = pfx => { const l = lines.find(x => x.startsWith(pfx)); return l ? l.slice(pfx.length).trim() : ""; };
   // api: block = indented lines between "api:" and the next top-level key
@@ -98,22 +152,56 @@ function renderSummary(d, text) {
   if (api.length) {
     html += `<div class="card"><div class="lbl">inputs &amp; outputs</div>`;
     for (const a of api) { const [sig, anc] = splitAnchor(a);
-      html += `<div class="sig">${hl(sig)}${anc ? `<span class="anchor">${anc}</span>` : ""}</div>`; }
+      html += `<div class="sig" data-sym="${escAttr(sigName(sig))}">${hl(sig)}` +
+              `${anc ? `<span class="anchor">${anc}</span>` : ""}</div>`; }
     html += `</div>`;
   }
-  const chipRow = (lbl, csv) => csv && csv !== "(none)" ?
+  // calls: each callee name → the file it resolves to (from this node's outgoing edges),
+  // so the chip navigates to that file + highlights the function. A name resolving to >1
+  // file is AMBIGUOUS → dead chip (don't guess a wrong destination). Unresolved → dead too.
+  const callMap = {};                   // to_name → target file id (null = ambiguous)
+  for (const e of (GRAPH ? GRAPH.links.filter(l => (l.source.id || l.source) === d.id) : []))
+    for (const c of (e.calls || [])) {
+      const tgt = (e.target.id || e.target);
+      if (c.to_name in callMap && callMap[c.to_name] !== tgt) callMap[c.to_name] = null;
+      else if (!(c.to_name in callMap)) callMap[c.to_name] = tgt;
+    }
+  const callChip = name => {
+    const f = callMap[name];
+    return f ? `<span class="chip nav" data-file="${escAttr(f)}" data-sym="${escAttr(name)}">${esc(name)}</span>`
+             : `<span class="chip dead">${esc(name)}</span>`;
+  };
+  const depChip = dep => {
+    const r = resolveDep(dep);
+    return r ? `<span class="chip nav" data-file="${escAttr(r.file)}" data-sym="${escAttr(r.sym)}">${esc(dep)}</span>`
+             : `<span class="chip dead">${esc(dep)}</span>`;
+  };
+  const card = (lbl, csv, mk) => csv && csv !== "(none)" ?
     `<div class="card"><div class="lbl">${lbl}</div><div class="chips">` +
-    csv.split(",").map(x => `<span class="chip">${esc(x.trim())}</span>`).join("") +
-    `</div></div>` : "";
-  html += chipRow("dependencies", deps) + chipRow("calls", calls);
+    csv.split(",").map(x => mk(x.trim())).filter(Boolean).join("") + `</div></div>` : "";
+  html += card("dependencies", deps, depChip) + card("calls", calls, callChip);
   panel.html(html);
+
+  // bind chip navigation + apply the requested function highlight
+  panel.selectAll(".chip.nav").on("click", function (ev) {
+    ev.stopPropagation();
+    navigateTo(this.getAttribute("data-file"), this.getAttribute("data-sym"));
+  });
+  if (highlightSym) {
+    const row = panel.selectAll(".sig").filter(function () {
+      return this.getAttribute("data-sym") === highlightSym; });
+    if (!row.empty()) {
+      row.classed("hl", true);
+      row.node().scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
 }
 
-function showSummary(d) {
+function showSummary(d, highlightSym) {
   panel.html(`<h2>${esc(d.id)}</h2><p id="hint">loading…</p>`);
   fetch("/api/summary?path=" + encodeURIComponent(d.id))
     .then(r => r.json())
-    .then(j => renderSummary(d, j.summary || ""))
+    .then(j => renderSummary(d, j.summary || "", highlightSym))
     .catch(() => panel.html(`<h2>${esc(d.id)}</h2><p id="hint">(failed to load)</p>`));
 }
 
@@ -163,6 +251,11 @@ fetch("/api/graph").then(r => r.json()).then(g => {
         .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     node.attr("transform", d => `translate(${d.x},${d.y})`);
   });
+
+  // shared state for the panel's chip navigation (resolve names → file nodes)
+  const byId = {};
+  for (const n of nodes) byId[n.id] = n;
+  GRAPH = { byId, links, node, link, sim, modmap: buildModMap(nodes) };
 });
 
 window.addEventListener("resize", () => {
