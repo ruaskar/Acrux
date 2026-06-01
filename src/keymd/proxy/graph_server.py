@@ -75,6 +75,16 @@ def build_graph_app(*, allowed_hosts: list[str] | None = None) -> Starlette:
         return JSONResponse({"path": rel,
                              "summary": engine.summary(abspath) or "(no summary indexed)"})
 
+    async def symbol_route(request: Request) -> Response:
+        rel = request.query_params.get("path", "")
+        name = request.query_params.get("name", "")
+        if not rel or not name:
+            return JSONResponse({"error": "missing path or name"}, status_code=400)
+        abspath = engine.canon(os.path.join(str(config.project_root()), rel))
+        if not _confined(abspath):          # confused-deputy guard: never read outside root
+            return JSONResponse({"error": "path outside project root"}, status_code=400)
+        return JSONResponse(query.symbol_detail(abspath, name))
+
     middleware = ([Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)]
                   if allowed_hosts else [])
     return Starlette(middleware=middleware, routes=[
@@ -82,6 +92,7 @@ def build_graph_app(*, allowed_hosts: list[str] | None = None) -> Starlette:
         Route("/d3.v7.min.js", d3_route, methods=["GET"]),
         Route("/api/graph", graph_route, methods=["GET"]),
         Route("/api/summary", summary_route, methods=["GET"]),
+        Route("/api/symbol", symbol_route, methods=["GET"]),
     ])
 
 
