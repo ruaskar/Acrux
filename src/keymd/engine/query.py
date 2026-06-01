@@ -1,6 +1,7 @@
 """query.py — read-only structured queries over the keymd index."""
 from __future__ import annotations
 
+import ast
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from keymd.engine import config, db
 from keymd.engine.graph import callers_for_symbol, relpath
+from keymd.engine.redact import redact_secrets
 
 
 @contextmanager
@@ -192,6 +194,72 @@ def graph_data() -> dict:
     finally:
         con.close()
     return {"nodes": nodes, "edges": edges}
+
+
+def _func_doc(abspath: str, qualified: str) -> str | None:
+    """First line of a function/method/class docstring, on-demand (not stored).
+    Redacted as prose. None if absent/unreadable. `qualified` is dotted (Foo.bar)."""
+    try:
+        tree = ast.parse(open(abspath, encoding="utf-8", errors="replace").read())
+    except (OSError, SyntaxError):
+        return None
+    node = tree
+    for seg in qualified.split("."):
+        nxt = None
+        for child in getattr(node, "body", []):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) \
+                    and child.name == seg:
+                nxt = child
+                break
+        if nxt is None:
+            return None
+        node = nxt
+    doc = ast.get_docstring(node)
+    if not doc:
+        return None
+    first = next((ln.strip() for ln in doc.splitlines() if ln.strip()), "")
+    return redact_secrets(first)[:200] if first else None
+
+
+def symbol_detail(path: str, name: str) -> dict:
+    """Per-function detail for the graph panel: summary (docstring), signature (I/O),
+    upstream callers, downstream callees. `name` may be a leaf (e.g. `parse`) — it is
+    resolved to the qualified symbol (`Parser.parse`) against the symbols table.
+    Pure read + an on-demand docstring read. Graceful on no-index / unknown symbol."""
+    path = config.canonical(path)
+    p = config.index_path()
+    if not p.exists():
+        return {"error": "no index"}
+    con = db.connect(p)
+    try:
+        cur = con.cursor()
+        row = cur.execute(
+            "SELECT name, signature, line, end_line FROM symbols "
+            "WHERE path=? AND kind IN ('function','method','class') "
+            "AND (name=? OR name LIKE ?) "
+            "ORDER BY (name=?) DESC, length(name) LIMIT 1",
+            (path, name, f"%.{name}", name)).fetchone()
+        if row is None:
+            return {"error": "symbol not found"}
+        qn, sig, line, end = row
+        callees = []
+        for to_name, to_path in cur.execute(
+                "SELECT DISTINCT to_name, to_path FROM edges "
+                "WHERE from_path=? AND from_name=? AND kind='call' ORDER BY to_name",
+                (path, qn)).fetchall():
+            callees.append({"name": to_name,
+                            "file": relpath(to_path) if to_path else None})
+    finally:
+        con.close()
+    c = callers(qn)                       # reuse the leaf-aware caller query (own _conn)
+    seen, callers_out = set(), []
+    for f, fn in c["exact"] + c["leaf"]:
+        if (f, fn) not in seen:
+            seen.add((f, fn))
+            callers_out.append({"file": f, "fn": fn})
+    return {"path": relpath(path), "name": qn, "signature": sig,
+            "line": line, "end_line": end, "doc": _func_doc(path, qn),
+            "callees": callees, "callers": callers_out}
 
 
 def missing_keymds(top: int = 30) -> list[tuple[int, str]]:
