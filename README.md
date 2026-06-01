@@ -277,8 +277,15 @@ Verified compatibility (examined May 2026):
 ## Install
 
 ```bash
-pip install -e ".[dev,proxy,watch,lang,docs]"   # engine is dependency-free; extras add proxy / watcher / JS-TS / PDF+DOCX
+pip install -c requirements.lock -e ".[dev,proxy,watch,lang,docs]"   # engine is dependency-free; extras add proxy / watcher / JS-TS / PDF+DOCX
 ```
+
+> **Install hanging or slow to resolve?** Use the `-c requirements.lock` constraints
+> file shown above — it pins every extra to a known-good version so pip's resolver
+> settles immediately instead of backtracking across hundreds of candidate releases.
+> If a native dependency (`python-docx` → `lxml`, `pypdf`) tries to build from source
+> and stalls, add `--prefer-binary` to force prebuilt wheels:
+> `pip install --prefer-binary -c requirements.lock -e ".[all]"`.
 
 > If `keymd` isn't found after install (common with Microsoft Store / `pip --user` Python, whose Scripts dir isn't on PATH), use the PATH-independent form **`python -m keymd ...`** in place of `keymd ...` everywhere below, or add your Python user-Scripts dir to PATH. A virtualenv avoids the issue entirely.
 
