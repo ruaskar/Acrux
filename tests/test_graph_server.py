@@ -51,3 +51,55 @@ def test_dns_rebinding_guard_rejects_foreign_host(env_proj):
                       base_url="http://evil.com")
     r = evil.get("/api/graph")
     assert r.status_code == 400      # TrustedHostMiddleware rejects non-loopback Host
+
+
+def test_index_route_serves_html(env_proj):
+    index.build(verbose=False)
+    r = _client().get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "<svg" in r.text or "d3.v7.min.js" in r.text
+
+
+def test_d3_asset_served(env_proj):
+    r = _client().get("/d3.v7.min.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    assert len(r.text) > 250_000           # the real vendored bundle, not a stub
+
+
+def test_api_summary_returns_summary(env_proj):
+    import os
+    index.build(verbose=False)
+    r = _client().get("/api/summary", params={"path": os.path.join("pkg", "parser.py")})
+    assert r.status_code == 200
+    assert "Parser" in r.json()["summary"]   # the class shows up in the .key.md
+
+
+def test_api_summary_refuses_path_outside_root(env_proj):
+    index.build(verbose=False)
+    r = _client().get("/api/summary", params={"path": "../../../../etc/passwd"})
+    assert r.status_code == 400
+    assert "summary" not in r.json()         # refused before any read
+
+
+def test_api_summary_hides_string_values(monkeypatch, tmp_path):
+    # A hardcoded secret must render as <str>, never verbatim, through the graph surface.
+    import os
+    proj = tmp_path / "proj"
+    (proj / "app").mkdir(parents=True)
+    (proj / "app" / "conf.py").write_text(
+        'API_KEY = "sk-ant-supersecret-DO-NOT-LEAK"\n'
+        'def boot(token: str = "sk-ant-supersecret-DO-NOT-LEAK"):\n'
+        '    return token\n', encoding="utf-8")
+    monkeypatch.setenv("KEYMD_PROJECT_ROOT", str(proj))
+    monkeypatch.setenv("KEYMD_INDEX_PATH", str(tmp_path / "index.db"))
+    from keymd.engine import config
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    index.build(verbose=False)
+
+    r = _client().get("/api/summary", params={"path": os.path.join("app", "conf.py")})
+    body = r.text
+    assert "sk-ant-supersecret-DO-NOT-LEAK" not in body   # never leaks the value
+    assert "<str>" in body                                # shows the type instead

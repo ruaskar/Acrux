@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>keymd graph</title>
+<script src="/d3.v7.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #0d1117; color: #c9d1d9; overflow: hidden; }
+  #wrap { display: flex; height: 100vh; }
+  #graph { flex: 1; }
+  #panel { width: 380px; border-left: 1px solid #21262d; padding: 16px;
+           overflow: auto; background: #0d1117; }
+  #panel h2 { font-size: 13px; margin: 0 0 8px; color: #58a6ff; word-break: break-all; }
+  #panel pre { white-space: pre-wrap; word-break: break-word; margin: 0;
+               font-size: 12px; color: #8b949e; }
+  #hint { color: #6e7681; }
+  .call { padding: 2px 0; border-bottom: 1px solid #161b22; }
+  .call b { color: #d2a8ff; }
+  .call .ln { color: #6e7681; float: right; }
+  .node circle { cursor: pointer; stroke: #0d1117; stroke-width: 1.5px; }
+  .node text { fill: #8b949e; font-size: 10px; pointer-events: none; }
+  .link { stroke: #30363d; stroke-opacity: 0.7; cursor: pointer; }
+  .link.sel { stroke: #d2a8ff; stroke-opacity: 1; }
+  .node.sel circle { stroke: #58a6ff; stroke-width: 2.5px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <svg id="graph"></svg>
+  <div id="panel"><h2>keymd graph</h2>
+    <p id="hint">Click a <b>node</b> for its .key.md summary &middot; click an <b>edge</b> for the calls crossing it.</p>
+  </div>
+</div>
+<script>
+const svg = d3.select("#graph");
+const panel = d3.select("#panel");
+let W = window.innerWidth - 380, H = window.innerHeight;
+svg.attr("width", W).attr("height", H);
+
+svg.append("defs").append("marker")
+  .attr("id", "arrow").attr("viewBox", "0 -5 10 10").attr("refX", 22)
+  .attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
+  .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#30363d");
+
+const root = svg.append("g");
+svg.call(d3.zoom().scaleExtent([0.15, 4]).on("zoom", e => root.attr("transform", e.transform)));
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function showSummary(d) {
+  panel.html(`<h2>${esc(d.id)}</h2><p id="hint">loc ${d.loc} &middot; called by ${d.called_by} file(s)</p><pre>loading…</pre>`);
+  fetch("/api/summary?path=" + encodeURIComponent(d.id))
+    .then(r => r.json())
+    .then(j => panel.select("pre").text(j.summary || "(no summary)"))
+    .catch(() => panel.select("pre").text("(failed to load summary)"));
+}
+
+function showEdge(e) {
+  const src = e.source.id || e.source, tgt = e.target.id || e.target;
+  const calls = (e.calls || []).map(c =>
+    `<div class="call"><b>${esc(c.from_name)}</b> → ${esc(c.to_name)}<span class="ln">L${c.line}</span></div>`).join("");
+  panel.html(`<h2>${esc(src)} → ${esc(tgt)}</h2>` +
+             `<p id="hint">${(e.calls || []).length} call(s) crossing this edge</p>${calls}`);
+}
+
+fetch("/api/graph").then(r => r.json()).then(g => {
+  const nodes = g.nodes;
+  const links = g.edges.map(e => ({ source: e.from, target: e.to, calls: e.calls }));
+  const maxCb = d3.max(nodes, n => n.called_by) || 1;
+  const r = d3.scaleSqrt().domain([0, maxCb]).range([5, 26]);
+
+  const sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("center", d3.forceCenter(W / 2, H / 2))
+    .force("collide", d3.forceCollide().radius(d => r(d.called_by) + 4));
+
+  const link = root.append("g").selectAll("line").data(links).join("line")
+    .attr("class", "link").attr("marker-end", "url(#arrow)")
+    .on("click", (ev, d) => { ev.stopPropagation();
+      link.classed("sel", false); d3.select(ev.currentTarget).classed("sel", true);
+      node.classed("sel", false); showEdge(d); });
+
+  const node = root.append("g").selectAll("g").data(nodes).join("g").attr("class", "node")
+    .call(d3.drag()
+      .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }))
+    .on("click", (ev, d) => { ev.stopPropagation();
+      node.classed("sel", false); d3.select(ev.currentTarget).classed("sel", true);
+      link.classed("sel", false); showSummary(d); });
+
+  node.append("circle").attr("r", d => r(d.called_by))
+    .attr("fill", d => d3.interpolateBlues(0.35 + 0.5 * (d.called_by / maxCb)));
+  node.append("title").text(d => d.id);
+  node.append("text").attr("x", d => r(d.called_by) + 3).attr("dy", "0.32em")
+    .text(d => d.id.split(/[/\\]/).pop());
+
+  sim.on("tick", () => {
+    link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    node.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+});
+
+window.addEventListener("resize", () => {
+  W = window.innerWidth - 380; H = window.innerHeight;
+  svg.attr("width", W).attr("height", H);
+});
+</script>
+</body>
+</html>
