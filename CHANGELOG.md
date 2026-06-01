@@ -4,6 +4,30 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/keymd/releases).
 
+## [0.1.7] — 2026-06-01
+
+### Added
+
+- **Clickable per-function detail in `keymd graph`.** Clicking a function or class row in
+  the side panel's "inputs & outputs" now opens a focused view of that symbol: its
+  **docstring summary**, its **signature (in / out)**, every **caller (upstream)**, and every
+  **callee (downstream)** — each caller/callee clickable to jump to that file and highlight
+  the function. A **← back** link returns to the file panel. Backed by a new read-only
+  `query.symbol_detail()` and a path-confined `/api/symbol` endpoint — pure read over the
+  existing index (callees from the call graph, callers from the caller index, the function's
+  docstring read on demand). No schema change, no re-index.
+- When a bare method name is **ambiguous** (e.g. two classes each defining `__init__`), the
+  panel shows a small picker of the candidates instead of silently guessing one.
+
+### Security
+
+- The on-demand function docstring is redacted as prose before it is served (provider tokens,
+  `key=value` secrets, and long opaque blobs are masked); the new `/api/symbol` route
+  canonicalizes and confines its path to the project root exactly like `/api/summary`, and all
+  caller/callee navigation attributes are HTML-attribute-escaped.
+
+[0.1.7]: https://github.com/ruaskar/keymd/releases/tag/v0.1.7
+
 ## [0.1.6] — 2026-06-01
 
 ### Added
