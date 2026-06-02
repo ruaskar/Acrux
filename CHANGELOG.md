@@ -4,6 +4,22 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/Acrux/releases).
 
+## [0.1.13] — 2026-06-03
+
+### Fixed
+
+- **`keymd summarize` now works with every OpenAI-compatible provider.** The OpenAI wire
+  hardcoded a `/v1` path segment, which doubled the version for any provider whose base URL
+  already includes it — breaking DeepSeek (`/v1`), Qwen (`/compatible-mode/v1`), Gemini
+  (`/v1beta/openai`), and local Ollama / LM Studio (`/v1`) with a `…/v1/v1/chat/completions`
+  404. The wire now follows the OpenAI-SDK / LiteLLM convention: the version lives in the
+  base URL you set (`KEYMD_OPENAI_BASE`) and only `/chat/completions` is appended. Point
+  `--wire openai` at any of these providers' documented base URLs and it just works; the
+  bare default (`https://api.openai.com/v1`) is unchanged. `--wire anthropic` (Claude /
+  Anthropic-compatible) is unaffected.
+
+[0.1.13]: https://github.com/ruaskar/Acrux/releases/tag/v0.1.13
+
 ## [0.1.12] — 2026-06-02
 
 ### Added
