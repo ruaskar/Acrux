@@ -4,6 +4,29 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/keymd/releases).
 
+## [0.1.9] — 2026-06-02
+
+### Fixed
+
+- **Installer now configures PATH instead of only warning about it.** `install.sh` /
+  `install.ps1` previously printed a "add it to PATH" note, then suggested a `keymd …`
+  command that failed with "command not found" whenever the install dir wasn't on PATH
+  (the common macOS/zsh case). They now append the install dir to the user's shell profile
+  (`.zshrc` / `.bashrc` / `.profile`) or Windows user PATH — idempotently, with
+  `KEYMD_NO_MODIFY_PATH=1` to opt out — and tell you to restart/`source` your shell.
+
+### Changed
+
+- **Installer next-steps are agent-agnostic.** The post-install hint no longer hardcodes
+  `keymd run -- claude`; it leads with `keymd graph` (no API key needed) and
+  `keymd run -- <your-agent>` (claude · codex · aider · cline · …).
+- **Project rebranded to Acrux** (the command stays `keymd`). The README now positions the
+  tool around its single structural map of your repo — served to your agent (fewer tokens)
+  and drawn for you as an interactive call-graph. No code, CLI, package, env-var, or tool
+  name changed.
+
+[0.1.9]: https://github.com/ruaskar/keymd/releases/tag/v0.1.9
+
 ## [0.1.8] — 2026-06-02
 
 ### Fixed
