@@ -76,6 +76,7 @@ Write-Host "installed: $dest\keymd.exe"
 Set-KeymdPath -Dir $dest
 
 Write-Host ""
-Write-Host "try (in a code repo):"
-Write-Host "  keymd graph                 # see your codebase as an interactive call-graph (no API key)"
-Write-Host "  keymd run -- <your-agent>   # wire your agent through keymd: e.g. claude / codex / aider / cline"
+Write-Host "try:"
+Write-Host "  keymd graph C:\path\to\repo   # see a codebase as an interactive call-graph (no API key)"
+Write-Host "  keymd run -- <your-agent>     # wire your agent through keymd: e.g. claude / codex / aider / cline"
+Write-Host "  (or cd into a repo first, then: keymd graph)"

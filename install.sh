@@ -105,6 +105,7 @@ echo "installed: $dest/keymd"
 _configure_path "$dest"
 
 echo
-echo "try (in a code repo):"
-echo "  keymd graph                 # see your codebase as an interactive call-graph (no API key)"
+echo "try:"
+echo "  keymd graph /path/to/repo   # see a codebase as an interactive call-graph (no API key)"
 echo "  keymd run -- <your-agent>   # wire your agent through keymd: e.g. claude · codex · aider · cline"
+echo "  (or cd into a repo first, then: keymd graph)"

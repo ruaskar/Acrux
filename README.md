@@ -30,7 +30,7 @@ your API key never leaves your machine. The **same map** is what `keymd graph` d
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh   # no Python needed (Windows: install.ps1)
-keymd graph                 # see your codebase as a call-graph (no API key needed)
+keymd graph /path/to/repo   # see a codebase as a call-graph (no API key needed)
 keymd run -- <your-agent>   # …or wire your agent through keymd: claude · codex · aider · cline · …
 ```
 
@@ -136,7 +136,8 @@ docs are **read-only** — `keymd_edit` applies to code/text files.
 ## See the call graph — `keymd graph`
 
 ```bash
-keymd graph          # opens an interactive map of your repo in the browser
+keymd graph                 # map the repo in the current directory
+keymd graph /path/to/repo   # …or point it at any repo from anywhere
 ```
 
 Run it in an indexed repo and keymd serves an interactive, force-directed graph of your
