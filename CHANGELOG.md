@@ -4,6 +4,23 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/Acrux/releases).
 
+## [0.1.12] — 2026-06-02
+
+### Added
+
+- **`keymd summarize` — opt-in LLM file summaries via your own model.** Caches a prose
+  summary per gated file, generated through **your** endpoint and key (OpenAI- or
+  Anthropic-protocol — covers local models like Ollama/LM Studio), and serves it as the
+  `summary:` lead everywhere: `.key.md`, the proxy gate, and the `keymd graph` side panel.
+  sha-incremental (re-summarizes only changed files) and secret-redacted. keymd never uses
+  its own key — a missing key fails loudly, never spends silently. The cache survives a
+  full `keymd build` (only stale/deleted entries are dropped), so summaries aren't
+  regenerated on every rebuild. `keymd summarize [path] --wire openai|anthropic --model X`.
+  The first pass costs about one scan per file; the win is reuse — later agent sessions
+  read the cached prose instead of re-reading the code.
+
+[0.1.12]: https://github.com/ruaskar/Acrux/releases/tag/v0.1.12
+
 ## [0.1.11] — 2026-06-02
 
 ### Added
