@@ -2,7 +2,26 @@
 
 Notable changes to keymd. This project follows [Semantic Versioning](https://semver.org/).
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
-[Releases page](https://github.com/ruaskar/keymd/releases).
+[Releases page](https://github.com/ruaskar/Acrux/releases).
+
+## [0.1.10] — 2026-06-02
+
+### Fixed
+
+- **`keymd graph` no longer dead-ends on a blank page.** Run from a directory with no
+  indexable code (e.g. your home dir, the common first-run case), it used to silently
+  build an empty index and open a blank graph. It now prints actionable guidance and
+  exits without starting a server. And `keymd graph [path]` / `keymd build [path]` accept
+  an explicit repo/folder, so you can point keymd at a project from anywhere (defaults to
+  the current directory when omitted).
+
+### Changed
+
+- **Repo URLs canonicalized to `github.com/ruaskar/Acrux`** (the project was renamed from
+  keymd to Acrux; the command is still `keymd`). Old `ruaskar/keymd` URLs continue to
+  redirect, so existing installers and badges keep working.
+
+[0.1.10]: https://github.com/ruaskar/Acrux/releases/tag/v0.1.10
 
 ## [0.1.9] — 2026-06-02
 
