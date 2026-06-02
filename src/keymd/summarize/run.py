@@ -19,8 +19,13 @@ _SYSTEM = ("You are summarizing one source file for a code index. In 1-2 sentenc
 _MAX_TOKENS = 512
 
 # per-wire env: (base_url_env, base_default, key_env)
+# Per-wire env: (base_url_env, base_default, key_env). The OpenAI default carries
+# the /v1 version segment because endpoint() appends only /chat/completions — the
+# ecosystem convention (OpenAI SDK + LiteLLM). A user pointing at another provider
+# supplies that provider's full documented base (DeepSeek/Gemini/Qwen/Ollama all
+# include the version), e.g. KEYMD_OPENAI_BASE=http://localhost:11434/v1.
 _ENV = {
-    "openai": ("KEYMD_OPENAI_BASE", "https://api.openai.com", "OPENAI_API_KEY"),
+    "openai": ("KEYMD_OPENAI_BASE", "https://api.openai.com/v1", "OPENAI_API_KEY"),
     "anthropic": ("KEYMD_ANTHROPIC_BASE", "https://api.anthropic.com", "ANTHROPIC_API_KEY"),
 }
 
@@ -42,10 +47,15 @@ def summarize(path: str | None, wire_name: str, model: str,
     base_env, base_default, key_env = _ENV[wire_name]
     key = os.environ.get(key_env)
     if not key:
+        hint = ("e.g. http://localhost:11434/v1 (Ollama), "
+                "https://api.deepseek.com/v1 (DeepSeek), "
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (Qwen), "
+                "https://generativelanguage.googleapis.com/v1beta/openai (Gemini)"
+                if wire_name == "openai" else "e.g. https://api.deepseek.com/anthropic")
         raise SystemExit(
             f"error: {key_env} is not set. `keymd summarize` uses YOUR OWN model "
-            f"endpoint + key — set {key_env} (and optionally {base_env} for a local "
-            f"model, e.g. http://localhost:11434 for Ollama). keymd never uses its own key.")
+            f"endpoint + key — set {key_env}, and {base_env} to your provider's base URL "
+            f"(include the version segment). {hint}. keymd never uses its own key.")
     base = os.environ.get(base_env, base_default)
 
     # Resolve target repo + ensure an index (mirror the graph/build path).
