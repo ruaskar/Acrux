@@ -9,7 +9,7 @@ take security reports seriously.
 
 **Please do not open a public issue for security problems.**
 
-Report privately via GitHub's **[Report a vulnerability](https://github.com/ruaskar/keymd/security/advisories/new)**
+Report privately via GitHub's **[Report a vulnerability](https://github.com/ruaskar/Acrux/security/advisories/new)**
 button (Security → Advisories). This opens a private channel with the maintainers.
 
 Please include:

@@ -1,12 +1,12 @@
 # Acrux installer (Windows) — downloads the prebuilt `keymd` binary from GitHub Releases.
-#   irm https://raw.githubusercontent.com/ruaskar/keymd/master/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/ruaskar/Acrux/master/install.ps1 | iex
 #
 # No Python/pip needed. The project is Acrux; the command it installs is `keymd`.
 #   $env:KEYMD_INSTALL_DIR=<dir>     install somewhere other than %LOCALAPPDATA%\keymd\bin
 #   $env:KEYMD_NO_MODIFY_PATH=1      don't touch your user PATH (print steps instead)
 $ErrorActionPreference = "Stop"
 
-$repo = "ruaskar/keymd"
+$repo = "ruaskar/Acrux"
 $dest = if ($env:KEYMD_INSTALL_DIR) { $env:KEYMD_INSTALL_DIR } else { "$env:LOCALAPPDATA\keymd\bin" }
 
 # --- PATH configuration (pure helper, returns an action so it's testable) -----
