@@ -116,11 +116,27 @@ def render_keymd(con: sqlite3.Connection, src_path: str) -> str:
 
     out: list[str] = []
     out.append(f"# {relpath(src_path)}  [{lang} · {loc} loc · sha:{sha[:8]}]")
-    drow = cur.execute(
-        "SELECT signature FROM symbols WHERE path=? AND kind='module_doc' LIMIT 1",
-        (src_path,)).fetchone()
-    if drow and drow[0]:
-        out.append(f"summary: {drow[0]}")
+    # Prefer an opt-in LLM summary cached at the CURRENT sha (`keymd summarize`);
+    # fall back to the deterministic module docstring. `sha` is already in scope
+    # (from the files query above), so this is a sha-incremental lookup. The
+    # llm_summaries table may be absent on an index built before summarize ran —
+    # tolerate that and fall back.
+    llm = None
+    try:
+        lrow = cur.execute(
+            "SELECT summary FROM llm_summaries WHERE path=? AND sha256=?",
+            (src_path, sha)).fetchone()
+        llm = lrow[0] if lrow else None
+    except sqlite3.OperationalError:           # table not created yet → no LLM summaries
+        llm = None
+    if llm:
+        out.append(f"summary: {llm}")
+    else:
+        drow = cur.execute(
+            "SELECT signature FROM symbols WHERE path=? AND kind='module_doc' LIMIT 1",
+            (src_path,)).fetchone()
+        if drow and drow[0]:
+            out.append(f"summary: {drow[0]}")
     out.append("api:")
     out.extend(api_lines or ["  (none)"])
     out.append("deps: " + (", ".join(deps_show) if deps_show else "(none)"))
