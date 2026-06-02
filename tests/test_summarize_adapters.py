@@ -4,9 +4,11 @@ from keymd.summarize.adapters import WIRES, AnthropicWire, OpenAIWire
 
 def test_openai_wire_shape():
     w = OpenAIWire()
-    assert w.endpoint("https://api.openai.com") == "https://api.openai.com/v1/chat/completions"
+    # endpoint() appends ONLY /chat/completions — the version lives in the base
+    # (OpenAI SDK + LiteLLM convention). The default base (run._ENV) carries /v1.
+    assert w.endpoint("https://api.openai.com/v1") == "https://api.openai.com/v1/chat/completions"
     # trailing slash on base must not double up
-    assert w.endpoint("https://api.openai.com/") == "https://api.openai.com/v1/chat/completions"
+    assert w.endpoint("https://api.openai.com/v1/") == "https://api.openai.com/v1/chat/completions"
     body = w.build_request("SYS", "def f(): pass", "gpt-4o", 512)
     assert body["model"] == "gpt-4o"
     assert body["messages"][0]["role"] == "system"
@@ -41,3 +43,35 @@ def test_registry_has_both():
     assert set(WIRES) == {"openai", "anthropic"}
     assert isinstance(WIRES["openai"], OpenAIWire)
     assert isinstance(WIRES["anthropic"], AnthropicWire)
+
+
+# Regression guard for the hardcoded-/v1 bug: each provider's OWN documented base
+# URL (version already in it) must produce a single, correct /chat/completions —
+# never a doubled /v1/v1. Bases verified against each provider's official docs.
+def test_openai_compatible_provider_base_urls_compose_correctly():
+    w = OpenAIWire()
+    cases = {
+        "https://api.openai.com/v1":
+            "https://api.openai.com/v1/chat/completions",
+        "https://api.deepseek.com/v1":
+            "https://api.deepseek.com/v1/chat/completions",
+        "https://generativelanguage.googleapis.com/v1beta/openai":
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1":
+            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "http://localhost:11434/v1":               # Ollama
+            "http://localhost:11434/v1/chat/completions",
+        "http://localhost:1234/v1":                # LM Studio
+            "http://localhost:1234/v1/chat/completions",
+    }
+    for base, expected in cases.items():
+        assert w.endpoint(base) == expected, f"{base} -> {w.endpoint(base)}"
+        assert "/v1/v1/" not in w.endpoint(base)   # never double the version
+
+
+def test_default_openai_base_composes_to_canonical_url():
+    """The default base in run._ENV must already carry the version so the bare
+    `--wire openai` default still hits the real OpenAI endpoint."""
+    from keymd.summarize.run import _ENV
+    default_base = _ENV["openai"][1]
+    assert OpenAIWire().endpoint(default_base) == "https://api.openai.com/v1/chat/completions"

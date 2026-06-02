@@ -24,7 +24,17 @@ class OpenAIWire:
     name = "openai"
 
     def endpoint(self, base: str) -> str:
-        return f"{base.rstrip('/')}/v1/chat/completions"
+        # Append ONLY the endpoint path — the version segment lives in the BASE,
+        # exactly as the OpenAI SDK and LiteLLM require ("api_base must have the
+        # /v1 postfix"). This is what makes every OpenAI-compatible provider work
+        # from one wire: the user points the base at their provider's documented
+        # URL (which already carries the version) and we never double it:
+        #   OpenAI   https://api.openai.com/v1
+        #   DeepSeek https://api.deepseek.com/v1
+        #   Gemini   https://generativelanguage.googleapis.com/v1beta/openai
+        #   Qwen     https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+        #   Ollama   http://localhost:11434/v1
+        return f"{base.rstrip('/')}/chat/completions"
 
     def build_request(self, system: str, file_text: str, model: str, max_tokens: int) -> dict:
         return {"model": model, "max_tokens": max_tokens, "messages": [
