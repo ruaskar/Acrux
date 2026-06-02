@@ -114,6 +114,16 @@ def main(argv: list[str] | None = None) -> int:
     dm = sp.add_parser("demo")
     dm.add_argument("path", nargs="?",
                     help="repo to demo on (default: keymd's own source)")
+    sm = sp.add_parser("summarize")
+    sm.add_argument("path", nargs="?",
+                    help="repo/folder to summarize (default: current dir)")
+    sm.add_argument("--wire", choices=["openai", "anthropic"], default="openai",
+                    help="model protocol (default openai; covers local OpenAI-compatible models)")
+    sm.add_argument("--model", default="gpt-4o", help="model id at your endpoint")
+    sm.add_argument("--limit", type=int, default=10_000,
+                    help="max files to summarize this run")
+    sm.add_argument("--threshold", type=int, default=50,
+                    help="only summarize files larger than this many lines (gated scope)")
 
     a = p.parse_args(argv)
 
@@ -227,6 +237,12 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "demo":
         from keymd import demo as _demo
         return _demo.run_demo(a.path)
+    elif a.cmd == "summarize":
+        from keymd.summarize import run as _sum
+        r = _sum.summarize(a.path, a.wire, a.model, a.limit, a.threshold)
+        print(f"keymd summarize ({r['model']}): summarized {r['summarized']}, "
+              f"skipped {r['skipped']} (cached), failed {r['failed']}")
+        return 0
     return 0
 
 
