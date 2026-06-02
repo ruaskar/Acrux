@@ -1,11 +1,51 @@
-# keymd installer (Windows) — downloads the prebuilt binary from GitHub Releases.
+# Acrux installer (Windows) — downloads the prebuilt `keymd` binary from GitHub Releases.
 #   irm https://raw.githubusercontent.com/ruaskar/keymd/master/install.ps1 | iex
 #
-# No Python/pip needed. Override the location with $env:KEYMD_INSTALL_DIR.
+# No Python/pip needed. The project is Acrux; the command it installs is `keymd`.
+#   $env:KEYMD_INSTALL_DIR=<dir>     install somewhere other than %LOCALAPPDATA%\keymd\bin
+#   $env:KEYMD_NO_MODIFY_PATH=1      don't touch your user PATH (print steps instead)
 $ErrorActionPreference = "Stop"
 
 $repo = "ruaskar/keymd"
 $dest = if ($env:KEYMD_INSTALL_DIR) { $env:KEYMD_INSTALL_DIR } else { "$env:LOCALAPPDATA\keymd\bin" }
+
+# --- PATH configuration (pure helper, returns an action so it's testable) -----
+# Decides what to do about PATH WITHOUT mutating anything. Returns one of:
+#   @{ action = "already" }                 dir already on user PATH
+#   @{ action = "manual";  newPath = ... }  opt-out / would-add (caller prints steps)
+#   @{ action = "add";     newPath = ... }  caller should persist newPath
+function Get-KeymdPathAction {
+  param([string]$Dir, [string]$UserPath, [bool]$NoModify)
+  $entries = @($UserPath -split ';' | Where-Object { $_ -ne '' })
+  if ($entries -contains $Dir) { return @{ action = "already" } }
+  $newPath = (@($entries + $Dir) -join ';')
+  if ($NoModify) { return @{ action = "manual"; newPath = $newPath } }
+  return @{ action = "add"; newPath = $newPath }
+}
+
+function Set-KeymdPath {
+  param([string]$Dir)
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $noModify = ($env:KEYMD_NO_MODIFY_PATH -eq "1")
+  $r = Get-KeymdPathAction -Dir $Dir -UserPath $userPath -NoModify $noModify
+  switch ($r.action) {
+    "already" { return }
+    "manual"  {
+      Write-Host "note: $Dir is not on your PATH. To use ``keymd``, add it:"
+      Write-Host "  [Environment]::SetEnvironmentVariable('Path', '$Dir;' + `$env:Path, 'User')"
+      return
+    }
+    "add" {
+      [Environment]::SetEnvironmentVariable("Path", $r.newPath, "User")
+      Write-Host "added $Dir to your user PATH"
+      Write-Host "-> open a NEW terminal (or log out/in) for it to take effect"
+    }
+  }
+}
+
+# When dot-sourced by the test harness ($env:KEYMD_LIB_ONLY=1), stop here —
+# expose the functions without downloading or installing anything.
+if ($env:KEYMD_LIB_ONLY -eq "1") { return }
 
 Write-Host "resolving latest release..."
 $tag = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name
@@ -32,7 +72,10 @@ Unblock-File $tmp   # strip Mark-of-the-Web so SmartScreen doesn't block first r
 Move-Item -Force $tmp "$dest\keymd.exe"
 Write-Host "installed: $dest\keymd.exe"
 
-if ($env:Path -notlike "*$dest*") {
-  Write-Host "note: add it to PATH -> $dest"
-}
-Write-Host "try:  keymd run -- claude"
+# Fix the PATH (the #1 first-run failure), don't just warn about it.
+Set-KeymdPath -Dir $dest
+
+Write-Host ""
+Write-Host "try (in a code repo):"
+Write-Host "  keymd graph                 # see your codebase as an interactive call-graph (no API key)"
+Write-Host "  keymd run -- <your-agent>   # wire your agent through keymd: e.g. claude / codex / aider / cline"

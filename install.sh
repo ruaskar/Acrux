@@ -1,12 +1,63 @@
 #!/usr/bin/env bash
-# keymd installer — downloads the prebuilt binary from GitHub Releases.
+# Acrux installer — downloads the prebuilt `keymd` binary from GitHub Releases.
 #   curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh
 #
-# No Python/pip needed. Override the location with KEYMD_INSTALL_DIR.
+# No Python/pip needed. The project is Acrux; the command it installs is `keymd`.
+#   KEYMD_INSTALL_DIR=<dir>     install somewhere other than ~/.local/bin
+#   KEYMD_NO_MODIFY_PATH=1      don't touch your shell profile (print steps instead)
 set -euo pipefail
 
 repo="ruaskar/keymd"
 dest="${KEYMD_INSTALL_DIR:-$HOME/.local/bin}"
+
+# --- PATH configuration (factored out so it's unit-testable) -----------------
+# Pick the shell profile to persist PATH into: prefer the file for the user's
+# login shell ($SHELL), falling back to whatever already exists, then ~/.profile.
+_profile_file() {
+  case "${SHELL:-}" in
+    *zsh)  printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc"; return ;;
+    *bash) printf '%s\n' "$HOME/.bashrc"; return ;;
+  esac
+  for f in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
+    [ -f "$f" ] && { printf '%s\n' "$f"; return; }
+  done
+  printf '%s\n' "$HOME/.profile"
+}
+
+# Append the PATH export to a profile file, idempotently (no duplicate on re-run).
+# Returns 0 if it wrote a line, 1 if it was already present.
+_add_to_profile() {
+  dir="$1"; profile="$2"
+  line="export PATH=\"$dir:\$PATH\""
+  [ -f "$profile" ] && grep -qF "$line" "$profile" && return 1
+  printf '\n# added by the Acrux (keymd) installer\n%s\n' "$line" >> "$profile"
+  return 0
+}
+
+# Is `dir` already on PATH?
+_on_path() { case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac; }
+
+# Configure PATH after install. Echoes guidance. Honors KEYMD_NO_MODIFY_PATH.
+_configure_path() {
+  dir="$1"
+  if _on_path "$dir"; then return 0; fi
+  if [ "${KEYMD_NO_MODIFY_PATH:-}" = "1" ]; then
+    echo "note: $dir is not on your PATH. To use \`keymd\`, add it:"
+    echo "  export PATH=\"$dir:\$PATH\"     # add this to your shell profile"
+    return 0
+  fi
+  profile="$(_profile_file)"
+  if _add_to_profile "$dir" "$profile"; then
+    echo "added $dir to PATH in $profile"
+  else
+    echo "$dir already configured in $profile"
+  fi
+  echo "→ restart your shell, or run:  source \"$profile\""
+}
+
+# When sourced by the test harness (LIB_ONLY=1), stop here — expose the functions
+# without downloading or installing anything.
+[ "${LIB_ONLY:-}" = "1" ] && return 0
 
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os" in
@@ -50,8 +101,10 @@ chmod +x "$tmp"
 mv -f "$tmp" "$dest/keymd"
 echo "installed: $dest/keymd"
 
-case ":$PATH:" in
-  *":$dest:"*) ;;
-  *) echo "note: add it to PATH →  export PATH=\"$dest:\$PATH\"" ;;
-esac
-echo "try:  keymd run -- claude"
+# Fix the PATH (the #1 first-run failure), don't just warn about it.
+_configure_path "$dest"
+
+echo
+echo "try (in a code repo):"
+echo "  keymd graph                 # see your codebase as an interactive call-graph (no API key)"
+echo "  keymd run -- <your-agent>   # wire your agent through keymd: e.g. claude · codex · aider · cline"

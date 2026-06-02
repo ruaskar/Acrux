@@ -30,7 +30,8 @@ your API key never leaves your machine. The **same map** is what `keymd graph` d
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh   # no Python needed (Windows: install.ps1)
-keymd run -- claude
+keymd graph                 # see your codebase as a call-graph (no API key needed)
+keymd run -- <your-agent>   # …or wire your agent through keymd: claude · codex · aider · cline · …
 ```
 
 > The installer verifies the binary against the release's `SHA256SUMS` before installing. **First run** fetches the dependency wheels from PyPI (a few seconds, needs network); after that keymd runs locally. Not on PyPI yet — Intel Macs / offline installs: `pipx install "keymd[all] @ git+https://github.com/ruaskar/keymd"`.
@@ -67,7 +68,7 @@ tokens). keymd is a token lever, not a capability tax.
 ```bash
 pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"   # not yet on PyPI; or use the binary
 cd your-project
-keymd run -- claude        # build index + serve + wire base-url + launch the agent through keymd
+keymd run -- <your-agent>  # build index + serve + wire base-url + launch your agent through keymd
 ```
 
 `keymd run -- <agent>` builds the index, starts the local proxy, injects the base-URL env
