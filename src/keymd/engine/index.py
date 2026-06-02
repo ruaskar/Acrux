@@ -19,16 +19,13 @@ def _file_sha(path: Path) -> str:
     return h.hexdigest()
 
 
-def iter_source_files():
-    exts = config.index_extensions()
+def iter_repo_files():
+    """Every file the project contains — index roots (rglob) + flat-repo top-level
+    (iterdir) — deduped by canonical path, BEFORE any extension filter. The single
+    definition of "what's in this repo", shared by iter_source_files (which keeps
+    the parseable ones) and build()'s unsupported-language skip notice (which counts
+    the dropped ones), so the two can never disagree about the traversal surface."""
     seen: set[str] = set()
-
-    def _ok(p) -> bool:
-        # .key.md are keymd's OWN sidecars (handled by iter_keymd_files); the .md
-        # parser would otherwise match them by suffix and index them as documents.
-        return (p.is_file() and not p.name.endswith(".key.md")
-                and any(p.name.endswith(e) for e in exts)
-                and not config.is_excluded(str(p)))
 
     def _emit(p):
         key = config.canonical(str(p))
@@ -41,15 +38,26 @@ def iter_source_files():
         if not root.exists():
             continue
         for p in root.rglob("*"):
-            if _ok(p) and _emit(p):
+            if p.is_file() and _emit(p):
                 yield p
     # top-level files directly under the project root (flat repos: app.py at root)
     try:
         for p in config.project_root().iterdir():
-            if _ok(p) and _emit(p):
+            if p.is_file() and _emit(p):
                 yield p
     except OSError:
         pass
+
+
+def iter_source_files():
+    exts = config.index_extensions()
+    for p in iter_repo_files():
+        # .key.md are keymd's OWN sidecars (handled by iter_keymd_files); the .md
+        # parser would otherwise match them by suffix and index them as documents.
+        if (not p.name.endswith(".key.md")
+                and any(p.name.endswith(e) for e in exts)
+                and not config.is_excluded(str(p))):
+            yield p
 
 
 def iter_keymd_files():
@@ -80,8 +88,17 @@ _LANG_BY_EXT = {
     ".py": "python", ".js": "javascript", ".jsx": "javascript",
     ".mjs": "javascript", ".cjs": "javascript",
     ".ts": "typescript", ".tsx": "typescript",
+    ".java": "java", ".c": "c", ".h": "c",
+    ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp",
+    ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp",
     ".md": "markdown", ".pdf": "pdf", ".docx": "docx",
 }
+
+# Common source extensions keymd has NO parser for yet — used ONLY to print a
+# one-line "skipped N files" notice on `build` so a mixed-repo user is never
+# *silently* missing files (the failure mode that hid Java/C/C++ before).
+_UNSUPPORTED_HINT = {".go", ".rs", ".rb", ".php", ".swift", ".kt", ".scala",
+                     ".cs", ".lua", ".dart", ".ex", ".exs", ".clj", ".m"}
 
 
 def _lang_for(path: Path) -> str:
@@ -99,6 +116,16 @@ def build(verbose: bool = True) -> dict:
     files = list(iter_source_files())
     if verbose:
         print(f"Indexing {len(files)} source files…")
+        skipped: dict[str, int] = {}
+        for q in iter_repo_files():
+            if q.suffix in _UNSUPPORTED_HINT and not config.is_excluded(str(q)):
+                skipped[q.suffix] = skipped.get(q.suffix, 0) + 1
+        if skipped:
+            top = ", ".join(f"{ext} ({n})" for ext, n in
+                            sorted(skipped.items(), key=lambda kv: -kv[1]))
+            total = sum(skipped.values())
+            print(f"skipped {total} files in unsupported languages: {top} "
+                  "— keymd indexes py, js, ts, java, c, cpp")
 
     n_sym = n_edge = 0
     t0 = time.time()

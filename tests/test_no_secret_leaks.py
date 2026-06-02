@@ -62,6 +62,30 @@ _MD = (
     f"# Config with {API}\n\n"
     f"Connect using postgres://admin:{CRED}@db:5432/prod for the database.\n"
 )
+# C++ default-arg string is the only place a string VALUE appears in a C-family
+# signature; it must be hidden structurally as `<str>` (the #18-class leak).
+_CPP = (
+    f'int connect(const char* url = "postgres://admin:{CRED}@db:5432/prod") {{\n'
+    "    return 0;\n"
+    "}\n"
+    "class C {\n"
+    f'    void send(const char* token = "{GH}") {{ }}\n'
+    "};\n"
+)
+# C has no string param defaults, but a credentialed include path is an edge-target
+# channel (scrubbed like a credentialed JS import specifier).
+_C = (
+    f'#include "https://user:{CRED}@registry.host/m.h"\n'
+    f'int connect(const char* url) {{ return 0; }}\n'
+)
+# Java has no param defaults; field initializers aren't emitted as symbols and body
+# strings never enter a signature — this guards that those stay non-leaking channels.
+_JAVA = (
+    "public class Main {\n"
+    f'    String API = "{API}";\n'                 # field initializer — not emitted as symbol
+    f'    void send() {{ String t = "{GH}"; }}\n'  # body string never enters a signature
+    "}\n"
+)
 
 # ext -> (filename, source) for the text-source parsers
 _CODE_FIXTURES = {
@@ -72,6 +96,15 @@ _CODE_FIXTURES = {
     ".cjs": ("m.cjs", _JS),
     ".ts": ("m.ts", _TS),
     ".tsx": ("m.tsx", _TS),
+    ".java": ("Main.java", _JAVA),
+    ".c": ("m.c", _C),
+    ".cpp": ("m.cpp", _CPP),
+    ".cc": ("m.cc", _CPP),
+    ".cxx": ("m.cxx", _CPP),
+    ".hpp": ("m.hpp", _CPP),
+    ".hh": ("m.hh", _CPP),
+    ".hxx": ("m.hxx", _CPP),
+    ".h": ("m.h", _CPP),
     ".md": ("m.md", _MD),
 }
 
@@ -84,6 +117,15 @@ _OPTIONAL = {
     ".cjs": "tree_sitter_javascript",
     ".ts": "tree_sitter_typescript",
     ".tsx": "tree_sitter_typescript",
+    ".java": "tree_sitter_java",
+    ".c": "tree_sitter_c",
+    ".cpp": "tree_sitter_cpp",
+    ".cc": "tree_sitter_cpp",
+    ".cxx": "tree_sitter_cpp",
+    ".hpp": "tree_sitter_cpp",
+    ".hh": "tree_sitter_cpp",
+    ".hxx": "tree_sitter_cpp",
+    ".h": "tree_sitter_cpp",
     ".pdf": "pypdf",
     ".docx": "docx",
 }

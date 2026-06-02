@@ -12,6 +12,7 @@ from pathlib import Path
 # Runtime dependency closure of keymd[all] that PyApp installs into the binary.
 PKGS = ["anyio", "certifi", "click", "colorama", "h11", "httpcore", "httpx", "idna",
         "lxml", "pypdf", "python-docx", "sniffio", "starlette", "tree-sitter",
+        "tree-sitter-c", "tree-sitter-cpp", "tree-sitter-java",
         "tree-sitter-javascript", "tree-sitter-typescript", "typing-extensions", "uvicorn"]
 
 
