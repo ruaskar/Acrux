@@ -58,6 +58,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS keymd_fts USING fts5(
     content,
     tokenize='unicode61'
 );
+
+-- Opt-in LLM file summaries (`keymd summarize`). One row per file; the row
+-- carries the sha256 it was written against, so a read at a different sha is a
+-- MISS (a changed file never serves a stale summary). Read by render_keymd's
+-- summary lead; populated only by the explicit `summarize` command.
+CREATE TABLE IF NOT EXISTS llm_summaries (
+    path TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    model TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 
