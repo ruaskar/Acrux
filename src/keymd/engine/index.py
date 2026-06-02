@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sqlite3
 import time
 from pathlib import Path
 
@@ -109,7 +110,23 @@ def _lang_for(path: Path) -> str:
 
 def build(verbose: bool = True) -> dict:
     db_path = config.index_path()
+    # Preserve the opt-in LLM summary cache across a full rebuild: a build unlinks
+    # the whole db, which would otherwise force an expensive re-summarize every time
+    # (and `build` runs on graph/serve/summarize-when-absent). Snapshot here; restore
+    # below ONLY rows whose path+sha still match the rebuilt index — that also drops
+    # orphan rows for deleted files and stale-sha rows for changed ones, in one pass.
+    preserved_summaries: list[tuple] = []
     if db_path.exists():
+        _old = db.connect(db_path)
+        try:
+            preserved_summaries = _old.execute(
+                "SELECT path, sha256, summary, model, created_at FROM llm_summaries"
+            ).fetchall()
+        except sqlite3.OperationalError:        # table absent (pre-summarize index)
+            preserved_summaries = []
+        finally:
+            _old.close()                        # MUST close before unlink — an open
+                                                # handle blocks unlink on Windows (WinError 32)
         db_path.unlink()
     con = db.connect(db_path, create=True)
 
@@ -180,6 +197,20 @@ def build(verbose: bool = True) -> dict:
         WHERE to_path IS NULL
     """)
     con.commit()
+
+    # Restore preserved LLM summaries whose file is STILL present at the SAME sha.
+    # A sha mismatch (file changed) or a missing path (file deleted) is dropped — so
+    # the cache survives a rebuild for unchanged files but never serves a stale summary.
+    # Done before the FTS render so a restored summary also feeds `keymd search`.
+    if preserved_summaries:
+        fresh = {p: s for (p, s) in con.execute("SELECT path, sha256 FROM files").fetchall()}
+        keep = [row for row in preserved_summaries
+                if fresh.get(row[0]) == row[1]]
+        if keep:
+            con.executemany(
+                "INSERT OR REPLACE INTO llm_summaries(path, sha256, summary, model, "
+                "created_at) VALUES (?, ?, ?, ?, ?)", keep)
+            con.commit()
 
     # FTS over the RENDERED summary of every indexed file (keyed by SOURCE path).
     # This makes `keymd search` work on a plain build — it indexes the summary text

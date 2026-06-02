@@ -32,6 +32,9 @@ def test_anthropic_wire_shape():
     resp = {"content": [{"type": "text", "text": "Defines class C."}]}
     assert w.extract_text(resp) == "Defines class C."
     assert w.extract_text({}) == ""
+    assert w.extract_text({"content": []}) == ""
+    # a text block with an explicit null value must not crash "".join
+    assert w.extract_text({"content": [{"type": "text", "text": None}]}) == ""
 
 
 def test_registry_has_both():

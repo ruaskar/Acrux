@@ -53,7 +53,9 @@ class AnthropicWire:
                 "content-type": "application/json"}
 
     def extract_text(self, resp: dict) -> str:
-        return "".join(b.get("text", "") for b in (resp.get("content") or [])
+        # `b.get("text") or ""` (not get(...,"")): a text block can carry an explicit
+        # null value, and "".join over a None would raise — coerce to "".
+        return "".join((b.get("text") or "") for b in (resp.get("content") or [])
                        if isinstance(b, dict) and b.get("type") == "text")
 
 

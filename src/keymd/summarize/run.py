@@ -81,7 +81,11 @@ def summarize(path: str | None, wire_name: str, model: str,
                 text = fh.read()
             body = wire.build_request(_SYSTEM, text, model, _MAX_TOKENS)
             resp = _call(wire, base, key, headers, body)
-            out = redact_secrets(wire.extract_text(resp).strip(), opaque=False)
+            # opaque=True (the STRONGER scrub, same as the docstring path): a model
+            # can paraphrase/echo a secret it read from the file, so this surface needs
+            # the bare-high-entropy-blob rule too, not just keyword/known-vendor shapes.
+            # Over-redacting a legitimate long token in prose is the correct bias here.
+            out = redact_secrets(wire.extract_text(resp).strip(), opaque=True)
             if out:
                 summary_store.put(con, fpath, sha, out, model)
                 done += 1
