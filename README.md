@@ -1,22 +1,32 @@
-# keymd
+# Acrux
 
 [![Release](https://img.shields.io/github/v/release/ruaskar/keymd?sort=semver&color=2ea043)](https://github.com/ruaskar/keymd/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Binaries](https://img.shields.io/badge/binaries-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555)](https://github.com/ruaskar/keymd/releases/latest)
 
-### Cut your AI coding agent's token usage by 50–70% — with no loss in answer quality.
+### Navigate your codebase by its brightest points.
 
-*This is the **read-payload reduction** — how much smaller a summary is than the full file —
-aggregated over keymd's own repo (`tiktoken o200k_base`, reproducible with
+**Acrux builds one structural map of your repo and puts it to work two ways:** your AI
+coding agent reads the **crux** of each file instead of the whole thing (**−50–70% tokens,
+no loss in answer quality**), and you explore how it all connects as an **interactive
+call-graph** in your browser.
+
+> **Acrux is the project; `keymd` is the command you run.** Everything below — `keymd build`,
+> `keymd serve`, `keymd graph` — is unchanged; Acrux is the name of the tool, `keymd` is how
+> you invoke it (the way you type `rg` to run ripgrep).
+
+*The −50–70% is the **read-payload reduction** — how much smaller a summary is than the full
+file — aggregated over this repo (`tiktoken o200k_base`, reproducible with
 `python benchmarks/offline_ab.py`). It's **task-shaped**: large when the agent navigates by
 summary, and near **0** when it must open a file for an exact value (it escalates and reads
 the full source). Savings scale with file size and the gate threshold.*
 
-`keymd` is a local proxy in front of your LLM that swaps every **full file read for a compact,
-line-anchored summary** — an API + call-graph map for code, a table of contents for **PDF / Word /
-Markdown**. Your agent navigates by summary and pulls (or surgically **edits**) only the exact lines
-it needs, opening the full source only when it has to. Summaries are deterministic — built from the
-AST / document structure with **no extra LLM call** — and your API key never leaves your machine.
+Under the hood, `keymd` is a local proxy in front of your LLM that swaps every **full file read
+for a compact, line-anchored summary** — an API + call-graph map for code, a table of contents
+for **PDF / Word / Markdown**. Your agent navigates by summary and pulls (or surgically
+**edits**) only the exact lines it needs, opening the full source only when it has to. Summaries
+are deterministic — built from the AST / document structure with **no extra LLM call** — and
+your API key never leaves your machine. The **same map** is what `keymd graph` draws for you.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh   # no Python needed (Windows: install.ps1)
@@ -45,7 +55,12 @@ tokens). keymd is a token lever, not a capability tax.
 
 > **Why it's different:** per-file sidecars for **code *and* documents** · a deterministic structure
 > section regenerated with **no LLM** · **served and enforced on every read** by a local proxy ·
-> **line anchors** for surgical reads + edits · backed by a **live, incremental call-graph** index.
+> **line anchors** for surgical reads + edits · backed by a **live, incremental call-graph** index ·
+> the same index **drawn as an interactive graph** (`keymd graph`).
+
+> **Why "Acrux"?** Acrux is the brightest star of the **Crux** (Southern Cross) — the point you
+> navigate by. The name is the idea: read the *crux* of each file (fewer tokens), and steer your
+> codebase by the map those points form (the call-graph).
 
 ## Quickstart (one command)
 
