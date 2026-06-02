@@ -4,6 +4,24 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/Acrux/releases).
 
+## [0.1.11] — 2026-06-02
+
+### Added
+
+- **`keymd graph` now works on Java, C, and C++ repos.** keymd previously indexed only
+  Python and JS/TS, so on a Java/C/C++ project the graph showed inert side-panel tabs —
+  nothing to map or navigate, because those files were never indexed. A new spec-driven
+  tree-sitter walker extracts symbols, signatures, and a cross-file call graph for these
+  languages, so the graph, the token-saving gate, search, and `.key.md` summaries all light
+  up. Reference/pointer returns, operators, out-of-line definitions, and destructors are
+  handled; function-pointer variables are correctly excluded; string default values stay
+  hidden (`<str>`) as on every other language. (`pip install 'keymd[lang]'` for the grammars;
+  they are embedded in the binary.)
+- **`keymd build` now reports skipped files** in languages it can't parse yet (e.g. Go,
+  Rust), so a mixed-repo never silently omits sources without telling you.
+
+[0.1.11]: https://github.com/ruaskar/Acrux/releases/tag/v0.1.11
+
 ## [0.1.10] — 2026-06-02
 
 ### Fixed
