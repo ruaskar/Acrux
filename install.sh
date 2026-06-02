@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Acrux installer — downloads the prebuilt `keymd` binary from GitHub Releases.
-#   curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ruaskar/Acrux/master/install.sh | sh
 #
 # No Python/pip needed. The project is Acrux; the command it installs is `keymd`.
 #   KEYMD_INSTALL_DIR=<dir>     install somewhere other than ~/.local/bin
 #   KEYMD_NO_MODIFY_PATH=1      don't touch your shell profile (print steps instead)
 set -euo pipefail
 
-repo="ruaskar/keymd"
+repo="ruaskar/Acrux"
 dest="${KEYMD_INSTALL_DIR:-$HOME/.local/bin}"
 
 # --- PATH configuration (factored out so it's unit-testable) -----------------
@@ -105,6 +105,7 @@ echo "installed: $dest/keymd"
 _configure_path "$dest"
 
 echo
-echo "try (in a code repo):"
-echo "  keymd graph                 # see your codebase as an interactive call-graph (no API key)"
+echo "try:"
+echo "  keymd graph /path/to/repo   # see a codebase as an interactive call-graph (no API key)"
 echo "  keymd run -- <your-agent>   # wire your agent through keymd: e.g. claude · codex · aider · cline"
+echo "  (or cd into a repo first, then: keymd graph)"

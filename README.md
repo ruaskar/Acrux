@@ -1,8 +1,8 @@
 # Acrux
 
-[![Release](https://img.shields.io/github/v/release/ruaskar/keymd?sort=semver&color=2ea043)](https://github.com/ruaskar/keymd/releases/latest)
+[![Release](https://img.shields.io/github/v/release/ruaskar/Acrux?sort=semver&color=2ea043)](https://github.com/ruaskar/Acrux/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Binaries](https://img.shields.io/badge/binaries-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555)](https://github.com/ruaskar/keymd/releases/latest)
+[![Binaries](https://img.shields.io/badge/binaries-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555)](https://github.com/ruaskar/Acrux/releases/latest)
 
 ### Navigate your codebase by its brightest points.
 
@@ -29,12 +29,12 @@ are deterministic — built from the AST / document structure with **no extra LL
 your API key never leaves your machine. The **same map** is what `keymd graph` draws for you.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh   # no Python needed (Windows: install.ps1)
-keymd graph                 # see your codebase as a call-graph (no API key needed)
+curl -fsSL https://raw.githubusercontent.com/ruaskar/Acrux/master/install.sh | sh   # no Python needed (Windows: install.ps1)
+keymd graph /path/to/repo   # see a codebase as a call-graph (no API key needed)
 keymd run -- <your-agent>   # …or wire your agent through keymd: claude · codex · aider · cline · …
 ```
 
-> The installer verifies the binary against the release's `SHA256SUMS` before installing. **First run** fetches the dependency wheels from PyPI (a few seconds, needs network); after that keymd runs locally. Not on PyPI yet — Intel Macs / offline installs: `pipx install "keymd[all] @ git+https://github.com/ruaskar/keymd"`.
+> The installer verifies the binary against the release's `SHA256SUMS` before installing. **First run** fetches the dependency wheels from PyPI (a few seconds, needs network); after that keymd runs locally. Not on PyPI yet — Intel Macs / offline installs: `pipx install "keymd[all] @ git+https://github.com/ruaskar/Acrux"`.
 
 ### Performance — measured on keymd's own repo · deterministic · `tiktoken o200k_base`
 
@@ -66,7 +66,7 @@ tokens). keymd is a token lever, not a capability tax.
 ## Quickstart (one command)
 
 ```bash
-pip install "keymd[all] @ git+https://github.com/ruaskar/keymd"   # not yet on PyPI; or use the binary
+pip install "keymd[all] @ git+https://github.com/ruaskar/Acrux"   # not yet on PyPI; or use the binary
 cd your-project
 keymd run -- <your-agent>  # build index + serve + wire base-url + launch your agent through keymd
 ```
@@ -93,13 +93,13 @@ Prefer a self-contained executable? Install the native binary (built with
 
 ```bash
 # Linux / macOS (Apple Silicon):
-curl -fsSL https://raw.githubusercontent.com/ruaskar/keymd/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ruaskar/Acrux/master/install.sh | sh
 # Windows (PowerShell):
-irm https://raw.githubusercontent.com/ruaskar/keymd/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/ruaskar/Acrux/master/install.ps1 | iex
 ```
 
 Or download a binary directly from the
-[latest release](https://github.com/ruaskar/keymd/releases/latest) —
+[latest release](https://github.com/ruaskar/Acrux/releases/latest) —
 `keymd-linux-x86_64`, `keymd-macos-aarch64`, `keymd-windows-x86_64.exe`. On first run it
 installs its dependencies into a private environment (one-time, ~seconds); every run after
 is instant. *Intel Macs:* use the `pip install` above for now.
@@ -136,7 +136,8 @@ docs are **read-only** — `keymd_edit` applies to code/text files.
 ## See the call graph — `keymd graph`
 
 ```bash
-keymd graph          # opens an interactive map of your repo in the browser
+keymd graph                 # map the repo in the current directory
+keymd graph /path/to/repo   # …or point it at any repo from anywhere
 ```
 
 Run it in an indexed repo and keymd serves an interactive, force-directed graph of your

@@ -10,6 +10,27 @@ import keymd.engine.parsers.treesitter  # noqa: F401  (registers JS/TS if `lang`
 from keymd.engine import index, query, refresh, sync_one
 
 
+def _target_repo(path: str | None) -> str | None:
+    """Resolve an explicit `[path]` arg for build/graph into KEYMD_PROJECT_ROOT (+ a
+    co-located .keymd/index.db, unless the user pinned KEYMD_INDEX_PATH). Lets a user
+    run `keymd graph /path/to/repo` from anywhere instead of only the current dir.
+    Returns an error string if the path doesn't exist, else None. No-op when omitted."""
+    if not path:
+        return None
+    import os
+    from pathlib import Path
+    p = Path(os.path.expanduser(path))
+    if not p.is_dir():
+        return f"error: {path} is not a directory"
+    root = os.path.realpath(p)
+    os.environ["KEYMD_PROJECT_ROOT"] = root
+    os.environ.setdefault("KEYMD_INDEX_PATH", os.path.join(root, ".keymd", "index.db"))
+    from keymd.engine import config            # caches key off project root → clear them
+    config.project_pkg_prefixes.cache_clear()
+    config._git_toplevel.cache_clear()
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     # The .key.md / search output uses non-ASCII glyphs; force UTF-8 on stdout
     # so `keymd search` / `build` don't crash on a non-UTF-8 Windows console.
@@ -30,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     sp = p.add_subparsers(dest="cmd", required=True)
 
     b = sp.add_parser("build"); b.add_argument("--quiet", action="store_true")
+    b.add_argument("path", nargs="?", help="repo/folder to index (default: current dir)")
     sp.add_parser("stats")
     r = sp.add_parser("refresh"); r.add_argument("path")
     sy = sp.add_parser("sync"); sy.add_argument("path")
@@ -47,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--no-watch", action="store_true",
                     help="don't auto-refresh the index on file edits")
     gph = sp.add_parser("graph")
+    gph.add_argument("path", nargs="?", help="repo/folder to graph (default: current dir)")
     gph.add_argument("--host", default="127.0.0.1")
     gph.add_argument("--port", type=int, default=None,
                      help="fixed port; default None = auto-chosen free port (preferred 8788)")
@@ -95,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     if a.cmd == "build":
+        err = _target_repo(a.path)
+        if err:
+            print(err, file=sys.stderr); return 1
         print(json.dumps(index.build(verbose=not a.quiet)))
     elif a.cmd == "stats":
         print(json.dumps(query.stats(), indent=2))
@@ -145,8 +171,19 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "graph":
         from keymd.engine import config        # `index` is already imported at module level;
         from keymd.proxy import graph_server   # re-importing it here would shadow it function-wide
+        err = _target_repo(a.path)
+        if err:
+            print(err, file=sys.stderr); return 1
         if not config.index_path().exists():   # ensure an index, like other read paths
             index.build(verbose=False)
+        # Empty index → don't open a blank browser. Tell the user where to point keymd.
+        if not query.graph_data()["nodes"]:
+            root = config.project_root()
+            print(f"no indexable source files found in {root}\n"
+                  "→ point keymd at a code repo:\n"
+                  "    keymd graph /path/to/repo\n"
+                  "  or cd into a repo first, then: keymd graph", file=sys.stderr)
+            return 1
         graph_server.serve(host=a.host, port=a.port, watch=not a.no_watch)
     elif a.cmd == "guard":
         from keymd.guardrails import cli as gcli
