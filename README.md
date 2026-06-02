@@ -254,7 +254,7 @@ upstream untouched. Verify with `keymd doctor --wire`.
 | Component | State |
 |---|---|
 | **Index engine** — tree-sitter call-graph + `.key.md` generator + query CLI | ✅ implemented, tested |
-| **Languages** — Python (stdlib `ast`), JS/TS (tree-sitter) | ✅ Python full; JS/TS symbols/sigs/deps/callees (caller-graph best-effort) |
+| **Languages** — Python (stdlib `ast`), JS/TS · Java · C · C++ (tree-sitter) | ✅ Python full; JS/TS/Java/C/C++ symbols/sigs/deps/callees + cross-file call graph (caller-graph best-effort) |
 | **Documents** — Markdown (core) · PDF + DOCX (`docs` extra) | ✅ table-of-contents summary + section anchors + ranged reads; binary docs read-only |
 | **Region tools** — `keymd_read_symbol` / `keymd_read_range` / `keymd_edit` | ✅ pull or surgically edit a span by anchor; edit re-indexes; confined to the repo |
 | **Graph viz** — `keymd graph` interactive call-graph + side panel | ✅ force-directed map; node→summary, clickable dep/call chips + per-function detail (callers/callees); localhost, offline (vendored D3) |
