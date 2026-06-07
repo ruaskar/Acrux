@@ -4,6 +4,23 @@ Notable changes to keymd. This project follows [Semantic Versioning](https://sem
 Changelog tracking begins at 0.1.4; earlier releases are listed on the
 [Releases page](https://github.com/ruaskar/Acrux/releases).
 
+## [0.1.14] — 2026-06-08
+
+### Added
+
+- **`keymd graph` now shows folder organization on top of the call graph.** Nodes are
+  colored by folder and wrapped in translucent labeled "blobs" (convex hulls), with a mild
+  clustering force so folders separate into visual neighborhoods — so the graph answers both
+  "what calls what" and "how is this repo organized" at once. A bottom-left legend lists each
+  folder (color + file count) with two independent per-folder toggles: click the row to
+  hide/show that folder's **files** (declutter a dominant directory like a big `tests/`), or
+  click the ⬡ button to hide/show just that folder's **grouping blob** while its files stay.
+  Quick controls toggle all/no files and all/no blobs. Folder grouping strips a leading
+  `src`/`lib` prefix so meaningful packages surface instead of one giant `src` blob. Pure
+  client-side — no change to the index or the data served.
+
+[0.1.14]: https://github.com/ruaskar/Acrux/releases/tag/v0.1.14
+
 ## [0.1.13] — 2026-06-03
 
 ### Fixed
