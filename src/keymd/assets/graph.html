@@ -54,6 +54,24 @@
   .link { stroke: #30363d; stroke-opacity: 0.7; cursor: pointer; }
   .link.sel { stroke: #d2a8ff; stroke-opacity: 1; }
   .node.sel circle { stroke: #58a6ff; stroke-width: 2.5px; }
+  .hulls path.hull, .hulls text.hlab { pointer-events: none; }   /* blobs never block clicks */
+  #legend { position: fixed; left: 12px; bottom: 12px; max-width: 300px; max-height: 40vh;
+            overflow:auto; background: rgba(13,17,23,0.82); border: 1px solid #21262d;
+            border-radius: 8px; padding: 8px 10px; font: 11px ui-monospace, monospace; }
+  #legend .row { display: flex; align-items: center; gap: 6px; line-height: 1.7; color: #8b949e;
+                 cursor: pointer; user-select: none; border-radius: 3px; padding: 0 3px; }
+  #legend .row:hover { background: #161b22; }
+  #legend .row.off { opacity: 0.4; text-decoration: line-through; }
+  #legend .row.off .sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px currentColor; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+  #legend h3 { font: 600 11px -apple-system, Segoe UI, sans-serif; margin: 0 0 6px; color: #8b949e; }
+  #legend .ctl { color: #58a6ff; font-size: 10px; margin: 2px 0 6px; }
+  #legend .ctl span { cursor: pointer; } #legend .ctl span:hover { text-decoration: underline; }
+  #legend .row .hb { margin-left: auto; flex: 0 0 auto; cursor: pointer; font-size: 11px;
+                     line-height: 1; padding: 1px 4px; border-radius: 3px; color: #6e7681; }
+  #legend .row .hb:hover { background: #21262d; color: #c9d1d9; }
+  #legend .row .hb.on { color: inherit; }        /* hull shown → glyph in folder color */
+  #legend .row .hb.muted { opacity: 0.25; }       /* nodes hidden → hull irrelevant, dim ⬡ */
 </style>
 </head>
 <body>
@@ -62,6 +80,7 @@
   <div id="panel"><h2>keymd graph</h2>
     <p id="hint">Click a <b>node</b> for its .key.md summary &middot; click an <b>edge</b> for the calls crossing it.</p>
   </div>
+  <div id="legend"></div>
 </div>
 <script>
 const svg = d3.select("#graph");
@@ -103,6 +122,17 @@ function sigName(sig) {                 // "def canonical(p) -> str" → "canoni
   const m = sig.match(/(?:def|class)\s+([A-Za-z0-9_]+)/);
   return m ? m[1] : "";
 }
+
+function folderOf(id) {                 // file id → readable top folder label for grouping
+  const segs = id.split(/[/\\]/);       // ids use OS separators (/ on posix, \ on windows)
+  segs.pop();                           // drop the filename
+  while (segs.length && (segs[0] === "src" || segs[0] === "lib"))
+    segs.shift();                       // strip a conventional source prefix so engine/proxy surface
+  if (!segs.length) return "(root)";    // a top-level file (README.md, etc.)
+  return segs[segs.length - 1];         // the immediate containing dir (tail=1: engine, proxy, parsers…)
+}
+
+let FOLDER_COLOR = null;                // d3.scaleOrdinal(folder → color), set once nodes load
 
 function buildModMap(nodes) {           // dotted module path → file id (all path tails)
   const m = {};
@@ -295,11 +325,31 @@ fetch("/api/graph").then(r => r.json()).then(g => {
   const maxCb = d3.max(nodes, n => n.called_by) || 1;
   const r = d3.scaleSqrt().domain([0, maxCb]).range([5, 26]);
 
+  // --- folder grouping: tag each node, build a stable color + a cluster anchor ---
+  nodes.forEach(n => { n.folder = folderOf(n.id); });
+  const folders = Array.from(new Set(nodes.map(n => n.folder))).sort();
+  FOLDER_COLOR = d3.scaleOrdinal().domain(folders)
+    .range(folders.map((_, i) => d3.interpolateRainbow(i / Math.max(folders.length, 1))));
+  // a deterministic anchor per folder on a ring → same-folder nodes get pulled together
+  const anchor = {};
+  folders.forEach((f, i) => {
+    const a = (i / folders.length) * 2 * Math.PI;
+    anchor[f] = { x: W / 2 + Math.cos(a) * Math.min(W, H) * 0.32,
+                  y: H / 2 + Math.sin(a) * Math.min(W, H) * 0.32 };
+  });
+
+  const linkForce = d3.forceLink(links).id(d => d.id).distance(90);
   const sim = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+    .force("link", linkForce)
     .force("charge", d3.forceManyBody().strength(-260))
     .force("center", d3.forceCenter(W / 2, H / 2))
+    // mild folder clustering — kept weak so the call links still shape local layout
+    .force("fx", d3.forceX(d => anchor[d.folder].x).strength(0.09))
+    .force("fy", d3.forceY(d => anchor[d.folder].y).strength(0.09))
     .force("collide", d3.forceCollide().radius(d => r(d.called_by) + 4));
+
+  // hull layer FIRST so folder blobs render behind links + nodes
+  const hullLayer = root.append("g").attr("class", "hulls");
 
   const link = root.append("g").selectAll("line").data(links).join("line")
     .attr("class", "link").attr("marker-end", "url(#arrow)")
@@ -317,16 +367,136 @@ fetch("/api/graph").then(r => r.json()).then(g => {
       link.classed("sel", false); showSummary(d); });
 
   node.append("circle").attr("r", d => r(d.called_by))
-    .attr("fill", d => d3.interpolateBlues(0.35 + 0.5 * (d.called_by / maxCb)));
+    .attr("fill", d => FOLDER_COLOR(d.folder));   // color by folder (size still = centrality)
   node.append("title").text(d => d.id);
   node.append("text").attr("x", d => r(d.called_by) + 3).attr("dy", "0.32em")
     .text(d => d.id.split(/[/\\]/).pop());
 
+  // group node positions by folder; convex hull (≥3 pts) padded, else a circle blob
+  const byFolder = {};
+  for (const n of nodes) (byFolder[n.folder] = byFolder[n.folder] || []).push(n);
+  const hidden = new Set();              // folders whose NODES are toggled off (row click)
+  const hullHidden = new Set();          // folders whose HULL overlay is toggled off (⬡ button)
+
+  function drawHulls() {
+    // a hull shows only if the folder's nodes are visible AND its hull isn't toggled off
+    const data = folders.filter(f => !hidden.has(f) && !hullHidden.has(f)).map(f => {
+      const pts = byFolder[f].map(n => [n.x, n.y]);
+      // polygonHull returns null for <3 pts AND a degenerate 2-point array for ≥3
+      // COLLINEAR pts (common transiently while the force settles) — both must fall
+      // back to the circle path, else polygonCentroid([2 pts]) → [null,null] → NaN path.
+      let hull = pts.length >= 3 ? d3.polygonHull(pts) : null;
+      if (hull && hull.length < 3) hull = null;
+      return { folder: f, pts, hull,
+               cx: d3.mean(pts, p => p[0]), cy: d3.mean(pts, p => p[1]) };
+    });
+    const PAD = 26;
+    // outline path: padded convex hull, or a padded circle for tiny folders
+    const blobs = hullLayer.selectAll("path.hull").data(data, d => d.folder);
+    blobs.join("path").attr("class", "hull")
+      .attr("fill", d => FOLDER_COLOR(d.folder)).attr("fill-opacity", 0.07)
+      .attr("stroke", d => FOLDER_COLOR(d.folder)).attr("stroke-opacity", 0.5)
+      .attr("stroke-width", 1.5).attr("stroke-linejoin", "round")
+      .attr("d", d => {
+        if (d.hull) {                                    // expand hull outward by PAD
+          const c = d3.polygonCentroid(d.hull);
+          const ex = d.hull.map(([x, y]) => {
+            const dx = x - c[0], dy = y - c[1], L = Math.hypot(dx, dy) || 1;
+            return [x + dx / L * PAD, y + dy / L * PAD];
+          });
+          return "M" + ex.map(p => p.join(",")).join("L") + "Z";
+        }
+        const r2 = (d.pts.length === 2                   // padded circle for 1–2 node folders
+          ? d3.max(d.pts, p => Math.hypot(p[0] - d.cx, p[1] - d.cy)) : 0) + PAD;
+        return `M ${d.cx - r2},${d.cy} a ${r2},${r2} 0 1,0 ${2 * r2},0 a ${r2},${r2} 0 1,0 ${-2 * r2},0`;
+      });
+    // folder name label near the blob's top
+    const labs = hullLayer.selectAll("text.hlab").data(data, d => d.folder);
+    labs.join("text").attr("class", "hlab")
+      .attr("x", d => d.cx).attr("y", d => d3.min(d.pts, p => p[1]) - PAD - 4)
+      .attr("text-anchor", "middle").attr("fill", d => FOLDER_COLOR(d.folder))
+      .attr("font-size", "11px").attr("font-weight", "600")
+      .attr("opacity", 0.85).text(d => d.folder);
+  }
+
+  // Re-run the layout over only the VISIBLE folders: hidden folders' nodes + any
+  // edge touching them drop out of both the DOM and the force sim, so the rest
+  // actually spreads out instead of just hiding behind invisible weight.
+  function applyFilter() {
+    const vis = n => !hidden.has(n.folder);
+    const visNodes = nodes.filter(vis);
+    const visLinks = links.filter(l =>
+      vis(typeof l.source === "object" ? l.source : byId[l.source]) &&
+      vis(typeof l.target === "object" ? l.target : byId[l.target]));
+    node.style("display", d => vis(d) ? null : "none");
+    link.style("display", d => {
+      const s = typeof d.source === "object" ? d.source : byId[d.source];
+      const t = typeof d.target === "object" ? d.target : byId[d.target];
+      return (vis(s) && vis(t)) ? null : "none";
+    });
+    sim.nodes(visNodes);
+    linkForce.links(visLinks);
+    sim.alpha(0.5).restart();
+  }
+
   sim.on("tick", () => {
+    drawHulls();
     link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
         .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     node.attr("transform", d => `translate(${d.x},${d.y})`);
   });
+
+  // folder legend (sorted by file count, descending). Each row TOGGLES its folder
+  // in/out of the visualization — click `tests` off and the rest breathes.
+  const counts = folders.map(f => ({ f, n: byFolder[f].length }))
+    .sort((a, b) => b.n - a.n);
+  const leg = d3.select("#legend");
+  leg.html(`<h3>folders (${folders.length})</h3>`);
+  leg.append("div").attr("class", "ctl")
+     .html('<span>row</span> = files · <span>⬡</span> = grouping');
+  const ctl2 = leg.append("div").attr("class", "ctl");
+  ctl2.append("span").text("all files").on("click",
+    () => { hidden.clear(); syncLegend(); applyFilter(); });
+  ctl2.append("span").text("  ·  no files").on("click",
+    () => { folders.forEach(f => hidden.add(f)); syncLegend(); applyFilter(); });
+  ctl2.append("span").text("  ·  all ⬡").on("click",
+    () => { hullHidden.clear(); syncLegend(); drawHulls(); });
+  ctl2.append("span").text("  ·  no ⬡").on("click",
+    () => { folders.forEach(f => hullHidden.add(f)); syncLegend(); drawHulls(); });
+  const rows = {};
+  for (const { f, n } of counts) {
+    const row = leg.append("div").attr("class", "row").attr("title", `${f}: click to hide files`);
+    row.append("span").attr("class", "sw").style("background", FOLDER_COLOR(f));
+    row.append("span").text(`${f} · ${n}`);
+    // per-folder HULL toggle (the colored blob/grouping) — independent of the node toggle
+    row.append("span").attr("class", "hb").style("color", FOLDER_COLOR(f)).text("⬡")
+      .on("click", (ev) => {
+        ev.stopPropagation();                       // don't also fire the row's node-toggle
+        if (hullHidden.has(f)) hullHidden.delete(f); else hullHidden.add(f);
+        syncLegend(); drawHulls();
+      });
+    row.on("click", () => {                          // row body = toggle this folder's NODES
+      if (hidden.has(f)) hidden.delete(f); else hidden.add(f);
+      syncLegend(); applyFilter();
+    });
+    rows[f] = row;
+  }
+  function syncLegend() {
+    for (const f of folders) {
+      const nodesOff = hidden.has(f), hullOff = hullHidden.has(f);
+      rows[f].classed("off", nodesOff);
+      // a hull only actually renders when the folder's NODES are visible AND its hull
+      // isn't toggled off — so the ⬡ reflects REAL visibility, not just the hullHidden flag.
+      const hullShown = !nodesOff && !hullOff;
+      rows[f].select(".hb")
+        .classed("on", hullShown)
+        .classed("muted", nodesOff)          // nodes gone → ⬡ is irrelevant, dim it
+        .attr("title", nodesOff ? `${f} files hidden — show the row first`
+                                : (hullOff ? "show" : "hide") + ` ${f} grouping`);
+    }
+  }
+
+  syncLegend();   // set initial ⬡ titles/classes (all folders shown by default)
 
   // shared state for the panel's chip navigation (resolve names → file nodes)
   const byId = {};
