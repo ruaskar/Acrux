@@ -1,6 +1,6 @@
 # Acrux (keymd) — agentic-task comparison results
 
-**Date:** 2026-06-29 · **N=6** questions over keymd's own indexed repo · **$0** (local paired subagents, blind Opus judge) · single-shot (no escape round-trip executed — see boundary).
+**Date:** 2026-06-29 · **N=6** questions over keymd's own indexed repo · **$0** (local paired subagents, blind Opus judge). Three runs recorded below: single-shot (§ tables), escape-honored (the fair product run), and the **S2 `test.sh` ground-truth arm** on an external repo (pytest-scored, no LLM judge).
 
 Method: per question, a **control** subagent reads full source and a **treatment** subagent reads keymd's `.key.md` summaries (the real shipped gate); a **blind judge** (randomized A/B labels) scores both against a grep-verified ground-truth key. Token save measured deterministically (`tiktoken o200k_base`) as control-view vs treatment-view input tokens.
 
@@ -64,7 +64,30 @@ source) and re-judging — verdicts in [`run_log_escape/`](run_log_escape/):
 - **Blind LLM judge** (randomized labels) — disclosed; the T3/T4 cases show the judge rewards committing to an answer.
 - **Efficiency and accuracy measured on different substrates** (deterministic token count vs live subagent answers) — reported separately, never blended.
 
+## S2 — test.sh ground-truth arm (external repo, pytest-scored, no LLM judge)
+
+Run once (2026-06-29) to close the two boundaries above (LLM-judge-only,
+own-repo-only). External repo `python-slugify` (82-test suite); a localized
+stopword case-normalization bug injected (`stopwords_lower = list(stopwords)`
+vs `[s.lower() for s in stopwords]`, breaks 3 tests). CONTROL = full source on
+disk; TREATMENT = the 2 gated code files replaced on disk by real
+`gate.summary_result` summaries + a `keymd_read_full` escape (grader/installer
+stay real source — the gate models what the agent *reads*, not what the
+interpreter *runs*). Verdict: `run_log_s2/S2-slugify-stopword.json`.
+
+| Arm | reads | pytest (controller-verified, not self-report) |
+|---|---|--:|
+| control (full source) | 1 source read | **82 passed, exit 0** ✅ |
+| treatment (summaries + escape) | 2× `keymd_read_full` | **82 passed, exit 0** ✅ |
+
+- **Accuracy parity, off the LLM judge, on an external repo** — both arms fixed
+  the bug; the treatment fix at line 179 is correct (targeted test passes).
+- **Token boundary recorded:** first-view −76.7% (526 vs 2,258 tok), but a *fix*
+  needs the file, so treatment escaped on both files → net ≈ +23% vs control. On
+  a surgical fix keymd is a net token **cost** with accuracy preserved; the save
+  lives on navigation/comprehension work, not edits. N=1 — one ground-truth point.
+
 ## Next to strengthen this
-- Run the **two-turn escape protocol** (grant `keymd_read_full` when treatment asks) → expected to recover T2/T5 and lift treatment pass@1 toward control while keeping most of the −61% save.
+- Run the **two-turn escape protocol** (grant `keymd_read_full` when treatment asks) → expected to recover T2/T5 and lift treatment pass@1 toward control while keeping most of the −61% save. **(DONE — see escape-honored run above: treatment 6/6.)**
 - Scale to the **curated Terminal-Bench code repos** (the `curate.py` path) for a larger, external-repo N.
-- Add the **test.sh completion arm** for a non-LLM-judged signal.
+- ~~Add the **test.sh completion arm** for a non-LLM-judged signal.~~ **(DONE — S2 above, N=1; next is N>1 across several external bugs + mixed nav-and-fix tasks to find the token crossover.)**

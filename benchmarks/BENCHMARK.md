@@ -169,6 +169,41 @@ This is the earlier `ability_eval` observation, now reproduced both ways:
 *summaries don't reduce
 what the agent can know; an un-honored escape reduces what it commits to.*
 
+### 3.5 Ground-truth arm — `test.sh` on an external repo (no LLM judge)
+The §3.3 arm still scores prose with a blind LLM judge. This arm removes the
+judge entirely: a real bug in an **external** repo, fixed by paired agents,
+scored by **`pytest` exit code**. Substrate: `python-slugify`
+(github.com/un33k/python-slugify, depth-1 clone, 82-test suite). A localized bug
+was injected — stopword case-normalization dropped (`stopwords_lower =
+list(stopwords)` instead of `[s.lower() for s in stopwords]`), breaking 3 real
+tests. **CONTROL** repo: full source on disk. **TREATMENT** repo: the two gated
+code files (`slugify.py` 197 loc, `__main__.py` 98 loc) replaced on disk by their
+real keymd `gate.summary_result` summaries, plus a `keymd_read_full` escape
+script. The grader (`test.py`) and installer stay real source — the gate models
+what the agent *reads*, not what the interpreter *runs*. Verdict in
+[`phase2/run_log_s2/`](phase2/run_log_s2/):
+
+| Arm | reads | result (pytest, controller-verified) |
+|---|---|--:|
+| control (full source) | 1 source read | **82 passed (exit 0)** ✅ |
+| treatment (summaries + escape) | 2 × `keymd_read_full` | **82 passed (exit 0)** ✅ |
+
+- **Both arms fixed the bug** — scored by `pytest`, not a judge; the treatment
+  agent used the escape twice, restored real source, and produced the *correct*
+  fix at line 179 (the targeted case-insensitive test passes).
+- **Accuracy parity confirmed off-LLM-judge, on an external repo** — the two
+  gaps §5 named (LLM-judge-only, own-repo-only) are both closed for this one task.
+
+> **Honest token finding — a fix task is keymd's boundary case.** First-view
+> tokens were **−76.7%** (summaries 526 vs full source 2,258), but a fix *requires*
+> opening the file, so the treatment agent escaped to full source on both files —
+> net read ≈ summary **+** source ≈ 2,784 tokens, **+23% vs control**. On a
+> surgical fix keymd is a net token **cost**, not a save; accuracy is preserved but
+> the efficiency lever isn't there. The token lever lives on
+> **navigation/comprehension** work where the agent answers *without* opening the
+> file (the §2/§3 battery), not on edits that need the source. This is the boundary,
+> recorded, not hidden.
+
 ---
 
 ## 4. Headline (with its boundaries)
@@ -195,8 +230,10 @@ what the agent can know; an un-honored escape reduces what it commits to.*
   single-shot p=0.62. Neither is a powered claim; the direction (no degradation,
   often a gain) is consistent with the larger prior 15/15 study.
 - **Blind LLM judge** (randomized labels, disclosed) — the T3/T4 cases show the
-  judge rewards committing to an answer; a non-LLM cross-check (the `test.sh`
-  completion arm) is **built but not yet run**.
+  judge rewards committing to an answer. The non-LLM cross-check (the `test.sh`
+  completion arm) has now been **run once on an external repo** (§3.5: both arms
+  pass real `pytest`); it is N=1 — a single ground-truth data point, not yet a
+  powered off-judge claim.
 - **Efficiency fixtures are validation shapes; the §2.4 numbers are on keymd's own
   repo** — a compact, small-file repo *understates* the lever vs. a large external
   codebase.
@@ -211,7 +248,10 @@ what the agent can know; an un-honored escape reduces what it commits to.*
   selects reading-heavy code tasks and Docker-materializes+indexes them for a
   larger, external-repo N.
 - **`test.sh` completion arm** — a non-LLM-judged, real-task-completion signal
-  (PROTOCOL.md §S2).
+  (PROTOCOL.md §S2). **First run done** (§3.5, external repo, both arms pass
+  `pytest`); the lever now is N>1 across several external bugs, and tasks that
+  mix navigation with the fix (where the gate's read-saving and the fix's
+  read-cost both apply) to find the crossover.
 
 ## 7. File map
 | Path | Role |
@@ -227,4 +267,5 @@ what the agent can know; an un-honored escape reduces what it commits to.*
 | [`phase2/battery/keymd_self.json`](phase2/battery/keymd_self.json) | the 6-question battery + ground-truth keys |
 | [`phase2/PROTOCOL.md`](phase2/PROTOCOL.md) | controller dispatch protocol (S1 Q&A + S2 test.sh) |
 | [`phase2/RESULTS.md`](phase2/RESULTS.md) | the detailed N=6 run record (§3 here summarizes it) |
-| [`phase2/run_log/`](phase2/run_log/) | per-question verdict JSONs |
+| [`phase2/run_log/`](phase2/run_log/) · [`phase2/run_log_escape/`](phase2/run_log_escape/) | per-question verdict JSONs (single-shot · escape-honored) |
+| [`phase2/run_log_s2/`](phase2/run_log_s2/) | §3.5 `test.sh` ground-truth verdict (external repo, pytest-scored) |
