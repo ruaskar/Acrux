@@ -217,3 +217,6 @@ def search(text: str, limit: int = 15) -> list:
             return query.search('"' + text.replace('"', '""') + '"', limit)
         except sqlite3.OperationalError:
             return []
+
+
+from keymd.engine.query import centrality_map  # noqa: F401

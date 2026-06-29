@@ -274,6 +274,26 @@ def symbol_detail(path: str, name: str) -> dict:
             "callees": callees, "callers": callers_out}
 
 
+def centrality_map() -> dict[str, int]:
+    """relpath -> number of distinct files that call into it (graph centrality).
+
+    Same signal `search` ranks by (see _called_by_count). One query over the
+    `edges` table; returns {} if the index isn't built (never raises).
+    """
+    p = config.index_path()
+    if not p.exists():               # index absent → empty map, do NOT use _conn() (it raises SystemExit)
+        return {}
+    con = db.connect(p)
+    try:
+        rows = con.execute(
+            "SELECT to_path, COUNT(DISTINCT from_path) FROM edges "
+            "WHERE kind='call' AND to_path IS NOT NULL GROUP BY to_path"
+        ).fetchall()
+    finally:
+        con.close()
+    return {relpath(to_path): n for to_path, n in rows}
+
+
 def missing_keymds(top: int = 30) -> list[tuple[int, str]]:
     with _conn() as con:
         cur = con.cursor()
