@@ -1,0 +1,8 @@
+{
+  "id": "T4",
+  "control": false,
+  "treatment": true,
+  "type": "locate",
+  "rationale": "treatment found all 3 call sites incl graph_server.py via call-graph; control missed it",
+  "protocol": "escape-honored (two-turn keymd_read_full granted on request)"
+}

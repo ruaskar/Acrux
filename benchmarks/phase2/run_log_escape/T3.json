@@ -1,0 +1,8 @@
+{
+  "id": "T3",
+  "control": true,
+  "treatment": true,
+  "type": "trace",
+  "rationale": "treatment correct AFTER keymd_read_full(gate.py) — exact marker committed",
+  "protocol": "escape-honored (two-turn keymd_read_full granted on request)"
+}

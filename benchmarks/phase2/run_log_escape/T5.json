@@ -1,0 +1,8 @@
+{
+  "id": "T5",
+  "control": true,
+  "treatment": true,
+  "type": "detail/fix",
+  "rationale": "treatment correct AFTER keymd_read_full(sync_one.py) — LOST-leaves NULL step",
+  "protocol": "escape-honored (two-turn keymd_read_full granted on request)"
+}

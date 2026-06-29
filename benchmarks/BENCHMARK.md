@@ -122,51 +122,51 @@ python -m benchmarks.phase2.report --run-log benchmarks/phase2/run_log \
 (Generating fresh verdicts requires a controller to run the §3.1 protocol — a
 Python script cannot dispatch agents. See PROTOCOL.md.)
 
-### 3.3 Headline result — escape-honored (the real product)
-The prior study ([`ability_eval.md`](ability_eval.md),
-[`enforced_gate_eval.py`](enforced_gate_eval.py)) ran the **escape-honored**
-protocol — summary-first, with the agent free to pull full source via
-`keymd_read_full` exactly as the shipped product allows:
-- **Voluntary battery: 5/5 vs 5/5 — 100% accuracy retained** (and on one task the
-  summary agent found *more* — both call sites of a function, via the call-graph).
-- **Strict enforced gate, 3 trials: 15/15 accuracy retained** when the agent uses
-  the escape keymd's own directive tells it to use.
-
-**This is keymd's degradation answer: reading summaries instead of full source
-costs zero answer quality, because full source is always one escape away.**
-
-### 3.4 Preliminary single-shot run — N=6, escape NOT granted
-This run (this suite's `phase2` harness) is a **harness check**, not a quality
-claim: it does **not** honor the escape, so an agent that correctly asks to open a
-file is scored as failing. Reported for transparency and because it surfaces a
-real finding (escalation discipline).
+### 3.3 Headline result — escape-honored (the real product), measured on this battery
+This run grants the `keymd_read_full` escape exactly as the shipped product does:
+when the treatment agent says it needs a file, it gets that file's full source and
+re-answers. **Measured, N=6** (verdicts in
+[`phase2/run_log_escape/`](phase2/run_log_escape/)):
 
 | Q | type | control | treatment | what happened |
 |---|---|:--:|:--:|---|
-| T1 | comprehension | ✅ | ✅ | both correct from the summary |
-| T2 | structure | ✅ | ❌ | treatment knew it lacked the exact endpoint-path literals and **asked to open** server.py — escape not granted |
-| T3 | trace | ✅ | ❌ | treatment **gave the exact marker** but hedged "would open to confirm" → judged as not committing |
+| T1 | comprehension | ✅ | ✅ | both correct from the summary (no escape needed) |
+| T2 | structure | ✅ | ✅ | treatment correct **after** `keymd_read_full(server.py)` — all 3 endpoint paths |
+| T3 | trace | ✅ | ✅ | treatment correct **after** `keymd_read_full(gate.py)` — exact marker, committed |
 | T4 | locate | ❌ | ✅ | treatment **found more** — all 3 call sites incl. `graph_server.py` via the call-graph; control (3 files) missed it |
-| T5 | detail/fix | ✅ | ❌ | implementation step absent from summary signatures; treatment **asked to open** sync_one.py |
-| T6 | detail/fix | ✅ | ✅ | both correct from the summary |
+| T5 | detail/fix | ✅ | ✅ | treatment correct **after** `keymd_read_full(sync_one.py)` — the LOST-leaves NULL step |
+| T6 | detail/fix | ✅ | ✅ | both correct from the summary (no escape needed) |
 
-- **control pass@1 = 5/6 (83.3%)**, **treatment pass@1 = 3/6 (50.0%)**
-- discordant: control-only **3** (T2,T3,T5), treatment-only **1** (T4)
-- **McNemar χ²(1, cc) = 0.25, p = 0.617 → no statistically significant difference.**
+- **control pass@1 = 5/6 (83.3%)**, **treatment pass@1 = 6/6 (100%)**
+- discordant: control-only **0**, treatment-only **1** (T4) → **McNemar χ²=0, p=1.0**
+- **Treatment matched or beat control on every question** — zero degradation; it
+  *won* T4 because the call-graph surfaced a call site full source couldn't see.
 
-### 3.5 Interpretation (read before citing the single-shot 50%)
-The raw treatment pass@1 **understates keymd**, for reasons visible in the table:
-1. **The losses are escalation-discipline artifacts, not capability loss.** On
-   T2/T5 the treatment agent **correctly recognized the summary lacked an exact
-   value and asked for full source** (`would open: <path>`). In the product that
-   is one `keymd_read_full` round-trip that returns it — the **single-shot
-   protocol here did not grant the escape**, so they score as failures. The agent
-   knew precisely what it was missing.
-2. **T3 had the right answer** and was penalized only for hedging.
-3. **On the structural question (T4) keymd wins outright** — the call-graph
-   surfaced a call site full source could not see.
+Consistent with the prior study ([`ability_eval.md`](ability_eval.md),
+[`enforced_gate_eval.py`](enforced_gate_eval.py)): **5/5 voluntary** and **15/15
+across 3 enforced-gate trials** — accuracy retained whenever the escape is used.
 
-This reproduces the earlier `ability_eval` observation: *summaries don't reduce
+**keymd's degradation answer: reading summaries instead of full source costs zero
+answer quality, because full source is always one escape away.**
+
+### 3.4 Contrast — the same battery WITHOUT the escape (why the escape matters)
+The same 6 questions, run **single-shot** (the agent answers in one turn; a request
+to open a file is scored as a non-answer). This is **not** a quality claim about
+keymd — it isolates what the escape buys:
+
+| Q | control | treatment (single-shot) | delta vs escape-honored |
+|---|:--:|:--:|---|
+| T2 | ✅ | ❌ | treatment **asked to open** server.py — not granted |
+| T3 | ✅ | ❌ | treatment gave the exact marker but **hedged** "would open to confirm" |
+| T5 | ✅ | ❌ | treatment **asked to open** sync_one.py — not granted |
+| T1,T4,T6 | (5/6) | same as escape-honored | — |
+
+- single-shot: **control 5/6 (83%) vs treatment 3/6 (50%)**, McNemar p=0.617 (still
+  not significant). All 3 deltas are the **escape being withheld** — the agent knew
+  exactly which file it needed. Grant it (→ §3.3) and treatment goes 3/6 → 6/6.
+
+This is the earlier `ability_eval` observation, now reproduced both ways:
+*summaries don't reduce
 what the agent can know; an un-honored escape reduces what it commits to.*
 
 ---
@@ -178,23 +178,22 @@ what the agent can know; an un-honored escape reduces what it commits to.*
 > files).
 >
 > **Quality:** with the `keymd_read_full` escape honored — i.e. the real product —
-> accuracy is **retained: 5/5 voluntary and 15/15 across 3 enforced-gate trials**
-> (§3.3). A separate single-shot run that does **not** grant the escape shows a
-> raw gap (control 5/6 vs treatment 3/6) that is **not statistically significant**
-> (McNemar p=0.62) and is fully explained by treatment agents *correctly asking for
-> an escape the harness withheld* (§3.4–3.5) — a harness limitation, not a keymd
-> capability loss. **Do not cite the single-shot 3/6 as keymd's quality cost.**
+> a measured N=6 run on this battery scored **control 5/6 (83%) vs treatment 6/6
+> (100%)**: treatment matched or beat full-source on every question (§3.3),
+> consistent with the prior **5/5 voluntary and 15/15 enforced-gate** studies. The
+> same battery run **single-shot** (escape withheld) drops treatment to 3/6 — a gap
+> that is *not* significant (McNemar p=0.62) and is **entirely** the withheld
+> escape: grant it and 3/6 → 6/6 (§3.4). **Do not cite the single-shot 3/6 as
+> keymd's quality cost** — keymd ships the escape.
 
 ---
 
 ## 5. Boundaries — what this does NOT yet show
 
 - **Degradation N is small (6) and on keymd's own repo** — illustrative, not
-  powered. p=0.62 means we cannot claim a difference in either direction.
-- **Single-shot protocol, escape not honored** — the head-to-head **understates
-  treatment**. The fair test grants `keymd_read_full` when treatment asks (a
-  two-turn protocol); expected to recover T2/T5 toward parity while keeping most
-  of the −61% save. **Not yet run.**
+  powered. Both runs are at N=6: escape-honored p=1.0 (treatment 6/6 ≥ control),
+  single-shot p=0.62. Neither is a powered claim; the direction (no degradation,
+  often a gain) is consistent with the larger prior 15/15 study.
 - **Blind LLM judge** (randomized labels, disclosed) — the T3/T4 cases show the
   judge rewards committing to an answer; a non-LLM cross-check (the `test.sh`
   completion arm) is **built but not yet run**.
@@ -205,8 +204,9 @@ what the agent can know; an un-honored escape reduces what it commits to.*
   count vs live agent answers) — reported separately, **never blended**.
 
 ## 6. Strengthening this (the roadmap, already scaffolded)
-- **Two-turn escape protocol** — the single change that turns "50% with caveats"
-  into a clean accuracy-retention number. Highest priority.
+- **Scale N** — the escape-honored run is done (§3.3) but N=6 on one repo. The next
+  lever is a **larger battery on external repos** for statistical power, not a new
+  protocol.
 - **Curated Terminal-Bench code repos** — [`phase2/curate.py`](phase2/curate.py)
   selects reading-heavy code tasks and Docker-materializes+indexes them for a
   larger, external-repo N.

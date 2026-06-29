@@ -29,9 +29,28 @@ Token save is **task-shaped**: large on multi-file / large-file questions (T2 �
 | T5 detail/fix | ✅ | ❌ | implementation step not in the summary signatures; treatment **asked to open sync_one.py** — escape not granted |
 | T6 detail/fix | ✅ | ✅ | both correct from summary |
 
-- **control pass@1 = 5/6 (83.3%)**, **treatment pass@1 = 3/6 (50.0%)**
+- **control pass@1 = 5/6 (83.3%)**, **treatment pass@1 = 3/6 (50.0%)** *(single-shot, escape withheld)*
 - discordant: control-only **3** (T2,T3,T5), treatment-only **1** (T4)
 - **McNemar χ²(1, continuity-corrected) = 0.25, p = 0.617 → no statistically significant difference** (N is small; this is the honest reading)
+
+### Escape-honored run (the real product — `keymd_read_full` granted on request)
+The 3 single-shot "misses" (T2, T3, T5) were all the treatment agent *asking to
+open* a specific file. Granting that escape (turn 2: summary + the requested full
+source) and re-judging — verdicts in [`run_log_escape/`](run_log_escape/):
+
+| Q | control | treatment | what happened |
+|---|:--:|:--:|---|
+| T1 | ✅ | ✅ | both correct from summary |
+| T2 | ✅ | ✅ | correct after `keymd_read_full(server.py)` — all 3 endpoint paths |
+| T3 | ✅ | ✅ | correct after `keymd_read_full(gate.py)` — exact marker, committed |
+| T4 | ❌ | ✅ | treatment found all 3 call sites incl. graph_server.py; control missed it |
+| T5 | ✅ | ✅ | correct after `keymd_read_full(sync_one.py)` — LOST-leaves NULL step |
+| T6 | ✅ | ✅ | both correct from summary |
+
+- **control 5/6 (83.3%) vs treatment 6/6 (100%)** — treatment matched or beat
+  full-source on every question; McNemar χ²=0, p=1.0. **3/6 → 6/6 with the escape.**
+- This is the fair number: keymd *ships* the escape. Consistent with the prior
+  15/15 enforced-gate study.
 
 ## What this actually shows (the honest interpretation)
 

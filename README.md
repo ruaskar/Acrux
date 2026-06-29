@@ -148,8 +148,9 @@ files ≤50 loc pass through, where a summary would be no smaller than the file.
 > **→ Full reproducible benchmark suite** — efficiency + degradation guard, methodology,
 > results, and reproduction commands — in [`benchmarks/BENCHMARK.md`](benchmarks/BENCHMARK.md).
 > A deterministic run over keymd's own repo measured **−61% read-payload tokens**; the
-> escape-honored degradation study (below) retained accuracy **15/15**. A paid end-to-end
-> harness is scaffolded, not run.
+> escape-honored degradation run scored **treatment 6/6 vs control 5/6** (summaries matched
+> or beat full source on every question), consistent with the prior **15/15** enforced-gate
+> study. A paid end-to-end harness is scaffolded, not run.
 
 ### Does the gate degrade the agent? No.
 
