@@ -232,3 +232,60 @@ def test_no_cache_control_anywhere_no_spurious_key():
     assert len(text_blocks) == 1
     assert "cache_control" not in text_blocks[0], \
         "must not inject a spurious cache_control key"
+
+
+# ---------------------------------------------------------------------------
+# Bug R3-A — sibling keys (citations, future fields) on text blocks are silently
+# dropped when collapsing list content
+# ---------------------------------------------------------------------------
+
+def test_citations_preserved_with_cc_on_first_text_block():
+    """R3-A: citations on the first text block must survive set_text.
+    Setup: [text+citations+cc, text] → rebuilt block has citations + last-cc + new text.
+    Image block must pass through untouched.
+    """
+    a = AnthropicAdapter()
+    citations = [{"type": "char_location", "cited_text": "src", "document_index": 0,
+                  "document_title": "doc", "start_char_index": 0, "end_char_index": 3}]
+    content = [
+        {"type": "text", "text": "cited", "citations": citations,
+         "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "more"},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
+    ]
+    body = _body_with_list_content(content)
+    refs = a.iter_tool_results(body)
+    refs[0].set_text("new")
+
+    result_content = body["messages"][1]["content"][0]["content"]
+    assert isinstance(result_content, list)
+    text_blocks = [b for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+    assert len(text_blocks) == 1
+    tb = text_blocks[0]
+    assert tb["text"] == "new", "text must be updated"
+    assert tb.get("citations") == citations, "citations must be preserved from first text block"
+    assert tb.get("cache_control") == {"type": "ephemeral"}, "cache_control (last cc) must survive"
+    types = [b.get("type") for b in result_content if isinstance(b, dict)]
+    assert "image" in types, "image block must survive"
+
+
+def test_citations_preserved_no_cc():
+    """R3-A: citations on first text block must survive when NO text block has cache_control."""
+    a = AnthropicAdapter()
+    citations = [{"type": "char_location", "cited_text": "src", "document_index": 0,
+                  "document_title": "doc", "start_char_index": 0, "end_char_index": 3}]
+    content = [
+        {"type": "text", "text": "cited", "citations": citations},
+        {"type": "text", "text": "more"},
+    ]
+    body = _body_with_list_content(content)
+    refs = a.iter_tool_results(body)
+    refs[0].set_text("new")
+
+    result_content = body["messages"][1]["content"][0]["content"]
+    text_blocks = [b for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+    assert len(text_blocks) == 1
+    tb = text_blocks[0]
+    assert tb["text"] == "new"
+    assert tb.get("citations") == citations, "citations must be preserved"
+    assert "cache_control" not in tb, "must not inject spurious cache_control"

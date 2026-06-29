@@ -92,19 +92,34 @@ class AnthropicAdapter:
                         # Anthropic honors up to 4 breakpoints on any block; collapsing
                         # all text blocks into one must not silently drop a breakpoint
                         # that sat on a non-first text block.
+                        text_blocks = [b for b in raw
+                                       if isinstance(b, dict) and b.get("type") == "text"]
                         cc = None
-                        for b in raw:
-                            if isinstance(b, dict) and b.get("type") == "text":
-                                if b.get("cache_control") is not None:
-                                    cc = b["cache_control"]
-                        # Build new text block, preserving cache_control if present
-                        text_blk = {"type": "text", "text": new}
-                        if cc is not None:
-                            text_blk["cache_control"] = cc
-                        # Keep all non-text blocks; replace all text blocks with one
+                        for b in text_blocks:
+                            if b.get("cache_control") is not None:
+                                cc = b["cache_control"]
+                        if text_blocks:
+                            # Start from a copy of the FIRST text block so sibling keys
+                            # (e.g. citations, future Anthropic text-block fields) are
+                            # preserved; then override text and apply last-cc logic.
+                            rebuilt_text = dict(text_blocks[0])
+                            rebuilt_text["text"] = new
+                            if cc is not None:
+                                rebuilt_text["cache_control"] = cc
+                            elif "cache_control" in rebuilt_text:
+                                # First block had cc but last-non-None scan chose None
+                                # (impossible if first block had cc, but be explicit).
+                                del rebuilt_text["cache_control"]
+                        else:
+                            # No text blocks at all — prepend a bare text block.
+                            rebuilt_text = {"type": "text", "text": new}
+                        # Rebuilt content: single text block FIRST, then non-text blocks.
+                        # Note: original [image, text] ordering is normalized to [text, image];
+                        # Anthropic treats tool_result sub-blocks as an unordered payload so
+                        # this reorder is semantically safe.
                         non_text = [b for b in raw
                                     if not (isinstance(b, dict) and b.get("type") == "text")]
-                        _blk["content"] = [text_blk] + non_text
+                        _blk["content"] = [rebuilt_text] + non_text
                     else:
                         _blk["content"] = new
                 refs.append(ToolResultRef(tid, text, setter))
