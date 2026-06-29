@@ -167,3 +167,68 @@ def test_same_id_same_name_harmless():
     names = a.tool_call_names(body)
     assert names.get("dup") == "grep", \
         "same id + same name should remain routable"
+
+
+# ---------------------------------------------------------------------------
+# Bug R2-A1 — cache_control on a NON-FIRST text block is silently dropped
+# ---------------------------------------------------------------------------
+
+def test_cache_control_on_last_text_block_survives_set_text():
+    """R2-A1: cc on the 2nd (non-first) text block must survive collapse."""
+    a = AnthropicAdapter()
+    content = [
+        {"type": "text", "text": "BIG text no cc"},
+        {"type": "text", "text": "second", "cache_control": {"type": "ephemeral"}},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
+    ]
+    body = _body_with_list_content(content)
+    refs = a.iter_tool_results(body)
+    refs[0].set_text("new text")
+
+    result_content = body["messages"][1]["content"][0]["content"]
+    assert isinstance(result_content, list), "must remain a list"
+    text_blocks = [b for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+    assert len(text_blocks) == 1, "exactly one text block"
+    assert text_blocks[0]["text"] == "new text"
+    assert text_blocks[0].get("cache_control") == {"type": "ephemeral"}, \
+        "cache_control from the last text block must be preserved"
+    types = [b.get("type") for b in result_content if isinstance(b, dict)]
+    assert "image" in types, "image block must survive"
+
+
+def test_cache_control_on_first_text_block_regression_guard():
+    """R2-A1 regression: cc on the FIRST text block still preserved (Round-1 behavior)."""
+    a = AnthropicAdapter()
+    content = [
+        {"type": "text", "text": "first", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "second, no cc"},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "xyz"}},
+    ]
+    body = _body_with_list_content(content)
+    refs = a.iter_tool_results(body)
+    refs[0].set_text("updated")
+
+    result_content = body["messages"][1]["content"][0]["content"]
+    text_blocks = [b for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+    assert len(text_blocks) == 1
+    assert text_blocks[0].get("cache_control") == {"type": "ephemeral"}, \
+        "cache_control on first block must still be preserved"
+
+
+def test_no_cache_control_anywhere_no_spurious_key():
+    """R2-A1: no cc on any text block → rebuilt text block must NOT have cache_control."""
+    a = AnthropicAdapter()
+    content = [
+        {"type": "text", "text": "first, no cc"},
+        {"type": "text", "text": "second, no cc"},
+    ]
+    body = _body_with_list_content(content)
+    refs = a.iter_tool_results(body)
+    refs[0].set_text("merged")
+
+    result_content = body["messages"][1]["content"][0]["content"]
+    assert isinstance(result_content, list)
+    text_blocks = [b for b in result_content if isinstance(b, dict) and b.get("type") == "text"]
+    assert len(text_blocks) == 1
+    assert "cache_control" not in text_blocks[0], \
+        "must not inject a spurious cache_control key"

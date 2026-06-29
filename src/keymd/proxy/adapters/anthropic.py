@@ -88,12 +88,15 @@ class AnthropicAdapter:
                 text = raw if isinstance(raw, str) else _flatten_text(raw)
                 def setter(new, _blk=blk, raw=raw):
                     if isinstance(raw, list):
-                        # Find cache_control on the first text block (if any)
+                        # Find cache_control from the LAST text block that has one.
+                        # Anthropic honors up to 4 breakpoints on any block; collapsing
+                        # all text blocks into one must not silently drop a breakpoint
+                        # that sat on a non-first text block.
                         cc = None
                         for b in raw:
                             if isinstance(b, dict) and b.get("type") == "text":
-                                cc = b.get("cache_control")
-                                break
+                                if b.get("cache_control") is not None:
+                                    cc = b["cache_control"]
                         # Build new text block, preserving cache_control if present
                         text_blk = {"type": "text", "text": new}
                         if cc is not None:
