@@ -67,3 +67,32 @@ def test_c2_rg_context_lines_do_not_defeat_gate():
         "rg -C2 result with 300 matches + 600 context lines must be bounded, not None"
     )
     assert "a.py" in out
+
+
+# ── BUG R2-B2: context-gate inflation (uncapped subtraction) ─────────────────
+
+def test_r2b2_prose_context_lines_uncapped_returns_none():
+    """1 real hit + 100 prose context-shaped lines → must be None (prose not excused)."""
+    lines = ["a.py:1:hit"]
+    for n in range(100):
+        lines.append(f"note-{n}-text")   # matches _CONTEXT pattern but is prose
+    text = "\n".join(lines)
+    result = bound_grep(text)
+    assert result is None, (
+        "1 grep hit drowned by 100 prose-context lines must return None, not a bounded result"
+    )
+
+
+def test_r2b2_real_rg_c2_300_hits_still_bounded():
+    """300 real grep hits + 600 rg -C2 context lines → still bounded (cap generous enough)."""
+    lines = []
+    for n in range(1, 301):
+        lines.append(f"a.py:{n}:hit")
+        lines.append(f"a.py-{n}-ctx before")
+        lines.append(f"a.py-{n}-ctx after")
+    text = "\n".join(lines)
+    out = bound_grep(text)
+    assert out is not None, (
+        "300 hits + 600 real context lines (300*2 <= 300*10) must still be bounded"
+    )
+    assert "a.py" in out

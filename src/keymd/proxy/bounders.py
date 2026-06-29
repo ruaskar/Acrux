@@ -34,8 +34,13 @@ def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | No
         elif _CONTEXT.match(ln) or not ln.strip():
             # BUG C2 fix: context/blank lines are structural — don't penalise them
             context_count += 1
-    # Gate: only non-structural (prose) lines count against us
-    non_structural = len(lines) - context_count
+    # Gate: only non-structural (prose) lines count against us.
+    # BUG R2-B2 fix: cap how many context lines are excused relative to real
+    # matches so that prose-heavy output (1 hit + 100 faked context lines) still
+    # returns None.  MAX_CONTEXT_PER_HIT=10 covers rg -C5 (5 before + 5 after).
+    _MAX_CONTEXT_PER_HIT = 10
+    effective_context = min(context_count, parsed * _MAX_CONTEXT_PER_HIT)
+    non_structural = len(lines) - effective_context
     if parsed == 0 or parsed < max(1, non_structural) // 2:
         return None                       # not majority grep-shaped → leave alone
 
@@ -62,12 +67,20 @@ def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | No
 _PATHISH = re.compile(r"^[\w ./\\-]+$")
 _PATH_INDICATOR = re.compile(r"[./\\]")
 
+# BUG R2-B1 fix: reject ls -l permission lines and "total N" headers.
+# A permission line starts with a file-type char followed by 9 rwx bits.
+# "total N" headers start with "total " + digits.
+_LS_LONG = re.compile(r"^([-dlbcps][-rwxsStT]{9}|total\s)")
+
 
 def bound_listing(text: str, centrality: dict[str, int] | None = None, *,
                   max_entries: int = 60) -> str | None:
     centrality = centrality or {}
     raw = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    paths = [p for p in raw if _PATHISH.match(p) and _PATH_INDICATOR.search(p)]
+    paths = [
+        p for p in raw
+        if not _LS_LONG.match(p) and _PATHISH.match(p) and _PATH_INDICATOR.search(p)
+    ]
     if not paths or len(paths) < max(1, len(raw)) // 2:
         return None                       # not majority path-shaped → leave alone
 

@@ -65,3 +65,37 @@ def test_m1_no_mixed_separator_in_dir_header():
     for line in out.splitlines():
         if "/" in line and "\\" in line:
             assert False, f"Mixed separators in output line: {line!r}"
+
+
+# ── BUG R2-B1: ls -l lines rejected; spaced filenames and total line ─────────
+
+def test_r2b1_ls_long_block_returns_none():
+    """`ls -l` permission lines must NOT be mistaken for a path listing."""
+    ls_l = (
+        "-rw-r--r-- 1 user group 4096 Jun 29 foo.py\n"
+        "-rwxr-xr-x 1 user group 2048 Jun 28 bar.sh\n"
+        "drwxr-xr-x 2 user group  512 Jun 27 src\n"
+        "-rw-r--r-- 1 user group  128 Jun 26 readme.md\n"
+    )
+    assert bound_listing(ls_l) is None, "ls -l block should return None (not a path listing)"
+
+
+def test_r2b1_spaced_filename_still_bounded():
+    """A plain listing with spaced filenames (Round-1 fix) must still be bounded."""
+    text = "my file.py\nother file.py\nfoo.py"
+    out = bound_listing(text)
+    assert out is not None, "Spaced filename listing must still be bounded"
+    assert "my file.py" in out
+    assert "other file.py" in out
+    assert "foo.py" in out
+    assert "listing: 3 paths" in out
+
+
+def test_r2b1_total_line_not_counted_as_path():
+    """`total 48` header must not count as a path candidate."""
+    ls_l = (
+        "total 48\n"
+        "-rw-r--r-- 1 user group 4096 Jun 29 foo.py\n"
+        "-rw-r--r-- 1 user group 2048 Jun 28 bar.py\n"
+    )
+    assert bound_listing(ls_l) is None, "ls -l with total header should return None"
