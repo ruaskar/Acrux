@@ -8,14 +8,22 @@ MAX_INNER_TURNS, on exhaustion of which a synthetic terminal turn is returned
 """
 from __future__ import annotations
 
-from keymd.proxy import gate, tools
+from keymd.proxy import bounders, engine as _eng, gate, result_bound, tools
 from keymd.proxy.adapters.base import WireAdapter
 
 MAX_INNER_TURNS = 24
 
 
+def _bound_rules() -> dict:
+    cmap = _eng.centrality_map()
+    return {
+        r"grep|rg|ripgrep|search_files": bounders.bound_grep,
+        r"ls|find|glob|list_dir|list_files": (lambda t: bounders.bound_listing(t, cmap)),
+    }
+
+
 async def complete(body: dict, adapter: WireAdapter, upstream, *,
-                   threshold: int = 50) -> dict:
+                   threshold: int = 50, bound: bool = False) -> dict:
     # No index → keymd can't summarize anything: every read would pass through and
     # the virtual tools would all answer "(index not built)". Skip injection AND the
     # gate loop entirely so keymd is a true transparent pass-through — it adds zero
@@ -24,6 +32,8 @@ async def complete(body: dict, adapter: WireAdapter, upstream, *,
     if not engine._index_ready():
         return await upstream(body)
     body = adapter.inject(body)
+    if bound:
+        result_bound.bound_results(body, adapter, _bound_rules(), fresh_results=0)
     last = None
     for _ in range(MAX_INNER_TURNS):
         resp = await upstream(body)
