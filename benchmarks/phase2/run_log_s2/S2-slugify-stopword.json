@@ -1,0 +1,19 @@
+{
+  "id": "S2-slugify-stopword",
+  "arm": "test.sh (real pytest, non-LLM-judged)",
+  "repo": "python-slugify (external, github.com/un33k/python-slugify @ depth-1 clone)",
+  "task": "Fix a localized bug: stopword case-normalization dropped (stopwords_lower = list(stopwords) instead of [s.lower() for s in stopwords]), breaking 3 real tests (case-insensitive stopword match + unicode stopword).",
+  "control": true,
+  "treatment": true,
+  "rationale": "pytest exit status: control=0 (82 passed), treatment=0 (82 passed) — both arms fixed the bug; verified independently by the controller, not from agent self-report.",
+  "control_reads": "1 source read of slugify.py, then fixed (full source on disk).",
+  "treatment_escapes": ["slugify/slugify.py", "slugify/__main__.py"],
+  "tokens": {
+    "control_full_source_2files": 2258,
+    "treatment_first_view_summaries": 526,
+    "summary_vs_source_first_view": "-76.7%",
+    "treatment_net_after_escape_est": 2784,
+    "net_vs_control": "+23.3% (treatment read summary THEN escaped to full source — a fix task needs the file)"
+  },
+  "honest_note": "A FIX task is the boundary case: the treatment agent must open the file to patch it, so the gate adds the summary ON TOP of the source it still reads. Accuracy is preserved (the keymd_read_full escape works; both arms pass real tests), but on a surgical fix keymd is a net token COST, not a save. The token lever lives on navigation/comprehension work (the agent answers WITHOUT opening), per the S1 battery — not on edits that require the source."
+}
