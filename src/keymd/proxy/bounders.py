@@ -12,16 +12,17 @@ import re
 # BUG C1 fix: allow optional leading Windows drive letter (e.g. C:\ or C:/)
 _HIT = re.compile(r"^(?P<path>(?:[A-Za-z]:[\\/])?[^\n:]+):(?P<line>\d+):(?P<rest>.*)$")
 
-# BUG C2 fix: context lines emitted by rg -C use dash separators; count them
-# so they don't inflate the denominator and defeat the majority gate.
-_CONTEXT = re.compile(r"^(?:[A-Za-z]:[\\/])?[^\n:]+-\d+-")
+# BUG C2 / R3-2 fix: context lines emitted by rg -C use dash separators.
+# Named group 'path' captures the file path so we can correlate context lines
+# with real hits (path-correlation gate — see bound_grep).
+_CONTEXT = re.compile(r"^(?P<path>(?:[A-Za-z]:[\\/])?[^\n:]+)-\d+-")
 
 
 def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | None:
     lines = text.splitlines()
     parsed, files = 0, {}
     order = []
-    context_count = 0
+    raw_context_lines: list[str] = []
     for ln in lines:
         m = _HIT.match(ln)
         if m:
@@ -32,15 +33,29 @@ def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | No
                 order.append(p)
             files[p].append((m.group("line"), m.group("rest")))
         elif _CONTEXT.match(ln) or not ln.strip():
-            # BUG C2 fix: context/blank lines are structural — don't penalise them
+            # Collect context/blank lines; we'll count them structurally below.
+            raw_context_lines.append(ln)
+
+    # BUG R3-2 fix: path-correlated context gate.
+    # A real rg -C context line shares its file path with an actual _HIT match.
+    # Arbitrary prose (e.g. "note-N-text") captures a different path or no path
+    # at all.  Only count a context line as structural if its captured path is
+    # present in the set of paths that have real hits.
+    hit_paths: set[str] = set(files.keys())
+    context_count = 0
+    for ln in raw_context_lines:
+        mc = _CONTEXT.match(ln)
+        if mc:
+            # Structural only when the context line's path matches a real hit path.
+            if mc.group("path") in hit_paths:
+                context_count += 1
+            # else: treated as non-structural (prose-like)
+        else:
+            # Blank lines: keep current handling — count as structural (harmless).
             context_count += 1
+
     # Gate: only non-structural (prose) lines count against us.
-    # BUG R2-B2 fix: cap how many context lines are excused relative to real
-    # matches so that prose-heavy output (1 hit + 100 faked context lines) still
-    # returns None.  MAX_CONTEXT_PER_HIT=10 covers rg -C5 (5 before + 5 after).
-    _MAX_CONTEXT_PER_HIT = 10
-    effective_context = min(context_count, parsed * _MAX_CONTEXT_PER_HIT)
-    non_structural = len(lines) - effective_context
+    non_structural = len(lines) - parsed - context_count
     if parsed == 0 or parsed < max(1, non_structural) // 2:
         return None                       # not majority grep-shaped → leave alone
 
@@ -68,9 +83,10 @@ _PATHISH = re.compile(r"^[\w ./\\-]+$")
 _PATH_INDICATOR = re.compile(r"[./\\]")
 
 # BUG R2-B1 fix: reject ls -l permission lines and "total N" headers.
-# A permission line starts with a file-type char followed by 9 rwx bits.
-# "total N" headers start with "total " + digits.
-_LS_LONG = re.compile(r"^([-dlbcps][-rwxsStT]{9}|total\s)")
+# BUG R3-1 fix: require whitespace after the 9 perm bits so a bare filename
+# like "lrwxrwxrwx.txt" (no space after the 10 chars) is NOT falsely rejected.
+# Real ls -l perm tokens are always followed by a space (more columns follow).
+_LS_LONG = re.compile(r"^([-dlbcps][-rwxsStT]{9}\s|total\s)")
 
 
 def bound_listing(text: str, centrality: dict[str, int] | None = None, *,

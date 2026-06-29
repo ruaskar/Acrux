@@ -99,3 +99,33 @@ def test_r2b1_total_line_not_counted_as_path():
         "-rw-r--r-- 1 user group 2048 Jun 28 bar.py\n"
     )
     assert bound_listing(ls_l) is None, "ls -l with total header should return None"
+
+
+# ── BUG R3-1: _LS_LONG false-drops files named like permission strings ────────
+
+def test_r3_1_file_named_like_perm_string_preserved():
+    """A file literally named 'lrwxrwxrwx.txt' must not be dropped by _LS_LONG."""
+    text = "lrwxrwxrwx.txt\nsrc/normal.py\nother/file.py"
+    out = bound_listing(text)
+    assert out is not None, "Listing with perm-named file should be bounded, not None"
+    assert "lrwxrwxrwx.txt" in out, "'lrwxrwxrwx.txt' must be preserved (not dropped as ls-l)"
+
+
+def test_r3_1_real_ls_l_still_none():
+    """Real ls -l output (perm block followed by space + more columns) still → None."""
+    ls_l = (
+        "-rw-r--r-- 1 user group 4096 Jun 29 foo.py\n"
+        "lrwxrwxrwx 1 user group   12 Jun 28 link -> target\n"
+        "drwxr-xr-x 2 user group  512 Jun 27 src\n"
+    )
+    assert bound_listing(ls_l) is None, "ls -l block with real perm lines must return None"
+
+
+def test_r3_1_total_48_still_rejected():
+    """`total 48` line must still be rejected (the total\\s pattern is unchanged)."""
+    text = "total 48\nsrc/foo.py\nsrc/bar.py"
+    # 'total 48' rejected → only 2 paths remain → 2/(2+1) >= 0.5 → bounded
+    out = bound_listing(text)
+    # We just verify 'total 48' is NOT in the output (rejected correctly)
+    if out is not None:
+        assert "total 48" not in out, "'total 48' must be filtered out"

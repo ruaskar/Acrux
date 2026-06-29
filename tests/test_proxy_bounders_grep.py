@@ -96,3 +96,51 @@ def test_r2b2_real_rg_c2_300_hits_still_bounded():
         "300 hits + 600 real context lines (300*2 <= 300*10) must still be bounded"
     )
     assert "a.py" in out
+
+
+# ── BUG R3-2: deep-context grep (rg -C6) wrongly returns None ────────────────
+
+def test_r3_2_deep_context_rg_c6_bounded():
+    """50 hits + 600 rg -C6 context lines (12/hit) → must be bounded, not None."""
+    lines = []
+    for n in range(1, 51):
+        lines.append(f"a.py:{n}:hit")
+        # rg -C6 produces 6 before + 6 after = 12 context lines per hit
+        for c in range(12):
+            lines.append(f"a.py-{n}-ctx{c}")
+    text = "\n".join(lines)
+    out = bound_grep(text)
+    assert out is not None, (
+        "50 hits + 600 rg -C6 context lines must be bounded, not None "
+        "(path-correlated context should all count)"
+    )
+    assert "a.py" in out
+
+
+def test_r3_2_prose_context_attack_still_none():
+    """1 hit + 100 prose lines that match _CONTEXT pattern but have different path → None."""
+    lines = ["a.py:1:hit"]
+    for n in range(100):
+        lines.append(f"note-{n}-text")  # path 'note-N' ∉ hit_paths{'a.py'}
+    text = "\n".join(lines)
+    result = bound_grep(text)
+    assert result is None, (
+        "1 grep hit with 100 prose context-shaped lines (different paths) must return None"
+    )
+
+
+def test_r3_2_mixed_path_context_not_counted():
+    """Context lines for b.py where only a.py has hits → b.py context not excused."""
+    lines = []
+    # 2 hits in a.py
+    lines.append("a.py:1:hit")
+    lines.append("a.py:2:hit")
+    # 50 context lines with b.py path — b.py has NO real hit
+    for n in range(50):
+        lines.append(f"b.py-{n}-ctx")
+    text = "\n".join(lines)
+    result = bound_grep(text)
+    # 2 hits, 50 non-correlated context lines → non_structural≈50 → 2 < 25 → None
+    assert result is None, (
+        "Context lines for b.py (no hit in b.py) must not be excused; result must be None"
+    )
