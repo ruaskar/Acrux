@@ -6,6 +6,7 @@ index for content — they restructure the real output only.
 """
 from __future__ import annotations
 
+import os
 import re
 
 _HIT = re.compile(r"^(?P<path>[^\n:]+):(?P<line>\d+):(?P<rest>.*)$")
@@ -44,8 +45,6 @@ def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | No
                    f"narrow the pattern or keymd_search)")
     return "\n".join(out)
 
-
-import os
 
 _PATHISH = re.compile(r"^[\w./\\-]+$")
 
