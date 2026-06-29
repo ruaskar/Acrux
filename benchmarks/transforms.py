@@ -34,7 +34,6 @@ def t_bound_cache(body: dict) -> dict:
     return b
 
 
-import json as _json  # noqa: E402
 from keymd.proxy import gate as _gate, engine as _eng  # noqa: E402
 
 _READ_TOOLS = {"read", "cat", "view", "read_file"}
