@@ -1,0 +1,8 @@
+{
+  "id": "T2",
+  "control": true,
+  "treatment": false,
+  "type": "structure",
+  "rationale": "treatment said would-open server.py for the exact endpoint PATH literals (value-lookup not in summary) → did not answer paths; control gave all 3",
+  "note": "single-shot, no escape round-trip executed"
+}

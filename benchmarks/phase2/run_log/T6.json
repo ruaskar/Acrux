@@ -1,0 +1,8 @@
+{
+  "id": "T6",
+  "control": true,
+  "treatment": true,
+  "type": "detail/fix",
+  "rationale": "both correct: _already_cached guard + structural scan + fail-closed",
+  "note": "single-shot, no escape round-trip executed"
+}

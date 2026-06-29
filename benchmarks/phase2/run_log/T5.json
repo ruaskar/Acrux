@@ -1,0 +1,8 @@
+{
+  "id": "T5",
+  "control": true,
+  "treatment": false,
+  "type": "detail/fix",
+  "rationale": "treatment said would-open sync_one.py (implementation step not in summary signatures) → did not answer; control gave the LOST-leaves NULL step",
+  "note": "single-shot, no escape round-trip executed"
+}

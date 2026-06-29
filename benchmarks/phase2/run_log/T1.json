@@ -1,0 +1,8 @@
+{
+  "id": "T1",
+  "control": true,
+  "treatment": true,
+  "type": "comprehension",
+  "rationale": "both correct: Decision{virtual,gated,host}, gated=summary",
+  "note": "single-shot, no escape round-trip executed"
+}

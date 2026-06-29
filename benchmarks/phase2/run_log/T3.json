@@ -1,0 +1,8 @@
+{
+  "id": "T3",
+  "control": true,
+  "treatment": false,
+  "type": "trace",
+  "rationale": "treatment GAVE the exact marker (it was in its gated view) but hedged would-open to confirm → judge penalized the hedge; control answered cleanly",
+  "note": "single-shot, no escape round-trip executed"
+}
