@@ -1,0 +1,55 @@
+[
+  {
+    "id": "T1",
+    "type": "comprehension",
+    "q": "What does gate.classify return, and which Decision kind replaces a file read with a summary?",
+    "files": ["src/keymd/proxy/gate.py", "src/keymd/proxy/engine.py"],
+    "key": "Returns a Decision dataclass whose kind is one of {virtual, gated, host}; kind == 'gated' is the one that replaces the read with a .key.md summary.",
+    "test_sh": null
+  },
+  {
+    "id": "T2",
+    "type": "structure",
+    "q": "List the wire adapters and the HTTP endpoint path each one serves.",
+    "files": [
+      "src/keymd/proxy/server.py",
+      "src/keymd/proxy/adapters/anthropic.py",
+      "src/keymd/proxy/adapters/openai.py",
+      "src/keymd/proxy/adapters/responses.py"
+    ],
+    "key": "Anthropic Messages -> /v1/messages (+ /v1/messages/count_tokens); OpenAI Chat -> /v1/chat/completions; OpenAI Responses -> /v1/responses.",
+    "test_sh": null
+  },
+  {
+    "id": "T3",
+    "type": "trace",
+    "q": "What exactly does the gate inject in place of an un-summarized large Read, and what is the exact marker string?",
+    "files": ["src/keymd/proxy/gate.py"],
+    "key": "gate.summary_result injects the .key.md summary wrapped by the marker line `⟪keymd-summary:{abspath}⟫`, then the summary body, then a footer telling the model to call keymd_read_full for full source.",
+    "test_sh": null
+  },
+  {
+    "id": "T4",
+    "type": "locate",
+    "q": "Which file(s) call engine.summary()?",
+    "files": ["src/keymd/proxy/engine.py", "src/keymd/proxy/gate.py", "src/keymd/proxy/tools.py"],
+    "key": "Two call sites: gate.py (gate.summary_result) and tools.py (tools.answer, the keymd_read virtual tool).",
+    "test_sh": null
+  },
+  {
+    "id": "T5",
+    "type": "detail/fix",
+    "q": "Which step in sync_one prevents a dangling edge when a symbol is renamed or removed?",
+    "files": ["src/keymd/engine/sync_one.py"],
+    "key": "Before the global re-resolve it computes the leaf names LOST from the file (old leaves minus new leaves) and NULLs their stale incoming edges: UPDATE edges SET to_path=NULL WHERE to_path=<file> AND to_name IN (lost).",
+    "test_sh": null
+  },
+  {
+    "id": "T6",
+    "type": "detail/fix",
+    "q": "How does inject_cache avoid double-injecting a cache breakpoint into a request body that already has one?",
+    "files": ["src/keymd/proxy/cache_inject.py"],
+    "key": "inject_cache calls _already_cached(body) before doing any mutation; _already_cached does a depth-bounded structural scan of system, tools, and messages for any existing cache_control key and returns True if found. If it returns True (or raises), inject_cache is a no-op, leaving the body byte-identical. The scan is fail-closed: any exception inside _already_cached returns True, so a malformed body skips injection rather than risking a double-breakpoint that would hit Anthropic's 4-breakpoint cap.",
+    "test_sh": null
+  }
+]
