@@ -23,11 +23,11 @@ def inject_cache(body: dict, wire: str) -> dict:
 
     sys = body.get("system")
     if isinstance(sys, list) and sys and isinstance(sys[-1], dict):
-        sys[-1]["cache_control"] = _EPHEMERAL
+        sys[-1]["cache_control"] = dict(_EPHEMERAL)
     elif isinstance(sys, str) and sys:
-        body["system"] = [{"type": "text", "text": sys, "cache_control": _EPHEMERAL}]
+        body["system"] = [{"type": "text", "text": sys, "cache_control": dict(_EPHEMERAL)}]
 
     tools = body.get("tools")
     if isinstance(tools, list) and tools and isinstance(tools[-1], dict):
-        tools[-1]["cache_control"] = _EPHEMERAL
+        tools[-1]["cache_control"] = dict(_EPHEMERAL)
     return body

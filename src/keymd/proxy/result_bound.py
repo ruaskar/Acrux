@@ -37,8 +37,11 @@ def bound_results(body: dict, adapter: WireAdapter,
         rule = next((fn for rx, fn in compiled if rx.fullmatch(name)), None)
         if rule is None:
             continue
-        new = rule(ref.text)                     # fail-open: None → leave as-is
-        if new is None:
+        try:
+            new = rule(ref.text)
+        except Exception:        # fail-open: a misbehaving rule must never crash the turn
+            continue
+        if new is None:          # fail-open: None → leave as-is
             continue
         # kind = the tool name, lowercased, for marker provenance
         ref.set_text(_mark(name.lower(), new))
