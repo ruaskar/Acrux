@@ -8,7 +8,7 @@ MAX_INNER_TURNS, on exhaustion of which a synthetic terminal turn is returned
 """
 from __future__ import annotations
 
-from keymd.proxy import bounders, cache_inject, engine as _eng, gate, result_bound, tools
+from keymd.proxy import bounders, cache_inject, engine as _eng, gate, result_bound, token_ledger, tools
 from keymd.proxy.adapters.base import WireAdapter
 
 MAX_INNER_TURNS = 24
@@ -24,14 +24,17 @@ def _bound_rules() -> dict:
 
 async def complete(body: dict, adapter: WireAdapter, upstream, *,
                    threshold: int = 50, bound: bool = False,
-                   cache: bool = False, wire: str = "anthropic") -> dict:
+                   cache: bool = False, wire: str = "anthropic",
+                   ledger: "str | None" = None) -> dict:
     # No index → keymd can't summarize anything: every read would pass through and
     # the virtual tools would all answer "(index not built)". Skip injection AND the
     # gate loop entirely so keymd is a true transparent pass-through — it adds zero
     # tokens (no tool defs, no directive) instead of advertising tools that don't work.
     from keymd.proxy import engine
     if not engine._index_ready():
-        return await upstream(body)
+        resp = await upstream(body)
+        token_ledger.record(ledger, body_in=body, resp=resp, adapter=adapter)
+        return resp
     body = adapter.inject(body)
     # Bounding runs once on entry; grep/ls are host tools (all-or-forward) so their results are bounded on the FOLLOW-UP request when the host posts them back — do NOT move this into the inner loop (host turns never reach it).
     if bound:
@@ -41,6 +44,7 @@ async def complete(body: dict, adapter: WireAdapter, upstream, *,
     last = None
     for _ in range(MAX_INNER_TURNS):
         resp = await upstream(body)
+        token_ledger.record(ledger, body_in=body, resp=resp, adapter=adapter)
         last = resp
         calls = adapter.tool_uses(resp)
         if not calls:

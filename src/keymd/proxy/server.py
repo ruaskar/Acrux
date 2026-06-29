@@ -233,7 +233,8 @@ def _upstream_error_response(e: "UpstreamError") -> JSONResponse:
 def build_app(threshold: int = 50, *, upstream: str | None = None,
               openai_base: str | None = None,
               allowed_hosts: list[str] | None = None,
-              bound: bool = False, inject_cache: bool = False) -> Starlette:
+              bound: bool = False, inject_cache: bool = False,
+              ledger: "str | None" = None) -> Starlette:
     async def anthropic_route(request: Request):
         body = await request.json()
         hdrs = dict(request.headers)
@@ -246,7 +247,7 @@ def build_app(threshold: int = 50, *, upstream: str | None = None,
 
         try:
             result = await complete(body, AnthropicAdapter(), up, threshold=threshold, bound=bound,
-                                    cache=inject_cache, wire="anthropic")
+                                    cache=inject_cache, wire="anthropic", ledger=ledger)
         except UpstreamError as e:
             return _upstream_error_response(e)
         if wants_stream:
@@ -265,7 +266,7 @@ def build_app(threshold: int = 50, *, upstream: str | None = None,
 
         try:
             result = await complete(body, OpenAIAdapter(), up, threshold=threshold, bound=bound,
-                                    cache=inject_cache, wire="openai")
+                                    cache=inject_cache, wire="openai", ledger=ledger)
         except UpstreamError as e:
             return _upstream_error_response(e)
         if wants_stream:
@@ -295,7 +296,7 @@ def build_app(threshold: int = 50, *, upstream: str | None = None,
 
         try:
             result = await complete(body, ResponsesAdapter(), up, threshold=threshold, bound=bound,
-                                    cache=inject_cache, wire="responses")
+                                    cache=inject_cache, wire="responses", ledger=ledger)
         except UpstreamError as e:
             return _upstream_error_response(e)
         if wants_stream:
@@ -321,7 +322,8 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 50,
           *, upstream: str | None = None, openai_base: str | None = None,
-          watch: bool = True, bound: bool = False, inject_cache: bool = False) -> None:
+          watch: bool = True, bound: bool = False, inject_cache: bool = False,
+          ledger: "str | None" = None) -> None:
     import uvicorn
     # Loopback bind (the default) → restrict the Host header to localhost (DNS-rebinding
     # defense). An explicit non-loopback bind means the user opted into exposure.
@@ -337,5 +339,5 @@ def serve(host: str = "127.0.0.1", port: int = 8787, threshold: int = 50,
             print("live refresh on — edits + new files re-index automatically")
     uvicorn.run(build_app(threshold=threshold, upstream=upstream,
                           openai_base=openai_base, allowed_hosts=allowed,
-                          bound=bound, inject_cache=inject_cache),
+                          bound=bound, inject_cache=inject_cache, ledger=ledger),
                 host=host, port=port)

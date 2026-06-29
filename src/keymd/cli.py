@@ -72,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="bound oversized grep/ls/find tool-results inbound")
     sv.add_argument("--inject-cache", action="store_true",
                     help="add prompt-cache breakpoints where the framework didn't (Anthropic-wire)")
+    sv.add_argument("--token-ledger", default=None, metavar="PATH",
+                    help="append per-request token counts to a JSONL file (Phase-2 live capture)")
     gph = sp.add_parser("graph")
     gph.add_argument("path", nargs="?", help="repo/folder to graph (default: current dir)")
     gph.add_argument("--host", default="127.0.0.1")
@@ -182,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
               f"(threshold={a.threshold} loc)")
         server.serve(host=a.host, port=a.port, threshold=a.threshold,
                      watch=not a.no_watch, bound=a.bound_results,
-                     inject_cache=a.inject_cache)
+                     inject_cache=a.inject_cache, ledger=a.token_ledger)
     elif a.cmd == "graph":
         from keymd.engine import config        # `index` is already imported at module level;
         from keymd.proxy import graph_server   # re-importing it here would shadow it function-wide
