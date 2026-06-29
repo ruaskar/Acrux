@@ -49,7 +49,7 @@ log = logging.getLogger(__name__)
 _SOURCE_EXTS = {
     ".py", ".js", ".ts", ".jsx", ".tsx",
     ".java", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp",
-    ".go", ".rs", ".rb", ".sh", ".bash",
+    ".go", ".rs", ".rb",
     ".php", ".cs", ".swift", ".kt", ".scala",
     ".lua", ".ex", ".exs", ".hs", ".ml", ".r", ".jl", ".m",
 }
