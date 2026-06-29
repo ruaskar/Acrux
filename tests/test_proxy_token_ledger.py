@@ -21,3 +21,15 @@ def test_default_off_writes_nothing(tmp_path):
     p = tmp_path / "none.jsonl"
     token_ledger.record(None, body_in={}, resp={}, adapter=AnthropicAdapter())
     assert not p.exists()
+
+
+def test_write_failure_is_isolated(tmp_path):
+    """Verify that write failures do not propagate and crash the request."""
+    # Path to a nonexistent parent directory — this will fail to open.
+    p = str(tmp_path / "nope" / "sub" / "ledger.jsonl")
+    body = {"messages": [{"role": "user", "content": "test"}]}
+    resp = {"usage": {"output_tokens": 5}}
+    # Should not raise; must return normally.
+    token_ledger.record(p, body_in=body, resp=resp, adapter=AnthropicAdapter())
+    # Verify no file was created.
+    assert not (tmp_path / "nope").exists()

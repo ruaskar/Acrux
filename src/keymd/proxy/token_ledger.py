@@ -115,5 +115,8 @@ def record(path: "str | None", *, body_in: dict, resp: dict, adapter) -> None:
         "tokens_out": _extract_tokens_out(resp),
     }
     # Open in append mode; create the file if it doesn't exist.
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(line) + "\n")
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line) + "\n")
+    except OSError:
+        pass  # telemetry must never crash a real request
