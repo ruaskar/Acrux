@@ -1,0 +1,32 @@
+[
+  {
+    "model": "claude-opus-4-5",
+    "max_tokens": 4096,
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "t1",
+            "name": "ls",
+            "input": {
+              "path": ".",
+              "recursive": true
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "content": "src/keymd/proxy/server.py\nsrc/keymd/proxy/gate.py\nsrc/keymd/proxy/engine.py\nsrc/keymd/proxy/orchestrator.py\nsrc/keymd/proxy/result_bound.py\nsrc/keymd/proxy/bounders.py\nsrc/keymd/proxy/tools.py\nsrc/keymd/proxy/live.py\nsrc/keymd/proxy/selfcheck.py\nsrc/keymd/proxy/cache_inject.py\nsrc/keymd/proxy/graph_server.py\nsrc/keymd/proxy/__init__.py\nsrc/keymd/proxy/adapters/anthropic.py\nsrc/keymd/proxy/adapters/openai.py\nsrc/keymd/proxy/adapters/base.py\nsrc/keymd/proxy/adapters/responses.py\nsrc/keymd/proxy/adapters/__init__.py\nsrc/keymd/proxy/server.key.md\nsrc/keymd/proxy/gate.key.md\nsrc/keymd/proxy/engine.key.md\nsrc/keymd/proxy/orchestrator.key.md\nsrc/keymd/proxy/result_bound.key.md\nsrc/keymd/proxy/bounders.key.md\nsrc/keymd/proxy/tools.key.md\nsrc/keymd/proxy/cache_inject.key.md\nsrc/keymd/proxy/adapters/anthropic.key.md\nsrc/keymd/proxy/adapters/base.key.md\nsrc/keymd/engine/query.py\nsrc/keymd/engine/config.py\nsrc/keymd/engine/db.py\nsrc/keymd/engine/sync_one.py\nsrc/keymd/engine/keymd_render.py\nsrc/keymd/engine/refresh.py\nsrc/keymd/engine/types.py\nsrc/keymd/engine/__init__.py\nsrc/keymd/__init__.py\nsrc/keymd/cli.py\nsrc/keymd/onboarding.py\nbenchmarks/__init__.py\nbenchmarks/trajectory.py\nbenchmarks/replay_engine.py\nbenchmarks/transforms.py\nbenchmarks/ab_harness.py\nbenchmarks/offline_ab.py\nbenchmarks/enforced_gate_eval.py\nbenchmarks/ability_eval.py\nbenchmarks/trajectory.key.md\nbenchmarks/replay_engine.key.md\nbenchmarks/transforms.key.md\nbenchmarks/ab_harness.key.md\nbenchmarks/fixtures/__init__.py\nbenchmarks/fixtures/trajectories/grep_heavy.json\nbenchmarks/fixtures/trajectories/cat_large.json\nbenchmarks/fixtures/trajectories/ls_recursive.json\nbenchmarks/fixtures/trajectories/growing_history.json\ntests/__init__.py\ntests/conftest.py\ntests/test_bench_fixtures.py\ntests/test_proxy_engine.py\ntests/test_proxy_orchestrator.py\ntests/test_proxy_adapter_anthropic.py\ntests/test_proxy_adapter_openai.py\ntests/test_proxy_bound_integration.py\ntests/test_proxy_tool_result_access.py\ntests/test_proxy_count_tokens.py\ntests/test_proxy_host_guard.py\ntests/test_query.py\ntests/test_anchors_and_edit.py\ntests/test_doc_pdf_docx.py\ntests/test_markdown_doc.py\ntests/test_e2e.py\ntests/test_onboarding.py\ntests/test_review_fixes.py\nscripts/validate_sse.py\nscripts/probe_realtime_md.py\nscripts/gen_ticker_directory.py\npyproject.toml\nREADME.md\n.gitignore\n.python-version\nFOLDER.md\nsrc/FOLDER.md\nbenchmarks/FOLDER.md\ntests/FOLDER.md\nsrc/keymd/proxy/FOLDER.md\nsrc/keymd/engine/FOLDER.md\nsrc/keymd/proxy/adapters/FOLDER.md\nbenchmarks/fixtures/FOLDER.md"
+          }
+        ]
+      }
+    ]
+  }
+]
