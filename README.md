@@ -143,8 +143,13 @@ files ≤50 loc pass through, where a summary would be no smaller than the file.
 > **Honest boundary:** this is the *read-payload* lever only — not whether cheap summaries
 > make a model read *more* files, not task success, not write-heavy work. The savings are
 > largest on read-heavy work over large files. (The source aotc-harness end-to-end A/B
-> measured −29% tokens / −85% lines / 96% accuracy retained on a different codebase; a paid
-> end-to-end harness for keymd is scaffolded in [`benchmarks/ab_harness.py`](benchmarks/ab_harness.py), not run.)
+> measured −29% tokens / −85% lines / 96% accuracy retained on a different codebase.)
+>
+> **→ Full reproducible benchmark suite** — efficiency + degradation guard, methodology,
+> results, and reproduction commands — in [`benchmarks/BENCHMARK.md`](benchmarks/BENCHMARK.md).
+> A deterministic run over keymd's own repo measured **−61% read-payload tokens**; the
+> escape-honored degradation study (below) retained accuracy **15/15**. A paid end-to-end
+> harness is scaffolded, not run.
 
 ### Does the gate degrade the agent? No.
 
@@ -347,7 +352,7 @@ keymd graph                       # interactive call-graph in your browser (loca
 | **Enforcing proxy** — gate + virtual tools, Anthropic + OpenAI wire formats | ✅ gate logic implemented, tested against a mock upstream |
 | **Guardrails** — push-main / duplicate / commit-before-build (opt-in, *not* token-saving) | ✅ implemented, tested |
 | **SSE streaming to a host** | ✅ synthesized — `stream:true` clients get a valid event stream (buffered then synthesized, **not** token-by-token; whole answer in one delta after the gate). Validated against the real `openai` SDK in-process and over a real socket (`python scripts/validate_sse.py`). |
-| **A/B token benchmark** | ✅ offline (no-spend) harness run — see [Measured token savings](#measured-token-savings); paid end-to-end harness scaffolded, not run |
+| **A/B token benchmark** | ✅ offline efficiency harness + live paired-subagent degradation guard run — see [`benchmarks/BENCHMARK.md`](benchmarks/BENCHMARK.md); paid end-to-end harness scaffolded, not run |
 
 > **Honest boundary:** the proxy's gate *logic* is proven end-to-end against a mock upstream and a real self-hosted-LLM dogfood (no paid API spend). The synthesized stream is validated against the real `openai` SDK — the canonical strict SSE client — both in-process and over a real socket; the *named* frameworks (OpenClaw / Hermes Agent) themselves haven't yet been driven against it. Streaming is *synthesized* (one delta after the gate completes), not true token-by-token relay — that's a future refinement.
 
