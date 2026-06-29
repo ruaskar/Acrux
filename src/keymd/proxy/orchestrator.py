@@ -33,6 +33,7 @@ async def complete(body: dict, adapter: WireAdapter, upstream, *,
     if not engine._index_ready():
         return await upstream(body)
     body = adapter.inject(body)
+    # Bounding runs once on entry; grep/ls are host tools (all-or-forward) so their results are bounded on the FOLLOW-UP request when the host posts them back — do NOT move this into the inner loop (host turns never reach it).
     if bound:
         result_bound.bound_results(body, adapter, _bound_rules(), fresh_results=0)
     if cache:

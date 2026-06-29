@@ -71,7 +71,12 @@ class OpenAIAdapter:
             if m.get("role") != "assistant":
                 continue
             for tc in m.get("tool_calls") or []:
-                out[tc.get("id", "")] = (tc.get("function", {}) or {}).get("name", "")
+                tid = tc.get("id", "")
+                name = (tc.get("function", {}) or {}).get("name", "")
+                if tid in out and out[tid] != name:
+                    out[tid] = ""   # collision: un-routable
+                else:
+                    out[tid] = name
         return out
 
     def iter_tool_results(self, body):

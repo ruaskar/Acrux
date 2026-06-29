@@ -63,7 +63,12 @@ class AnthropicAdapter:
                 continue
             for b in m.get("content", []) or []:
                 if isinstance(b, dict) and b.get("type") == "tool_use":
-                    out[b.get("id", "")] = b.get("name", "")
+                    tid = b.get("id", "")
+                    name = b.get("name", "")
+                    if tid in out and out[tid] != name:
+                        out[tid] = ""   # collision: un-routable
+                    else:
+                        out[tid] = name
         return out
 
     def iter_tool_results(self, body):
@@ -81,8 +86,24 @@ class AnthropicAdapter:
                 raw = blk.get("content")
                 # content may be a str or a list of {"type":"text","text":...} blocks
                 text = raw if isinstance(raw, str) else _flatten_text(raw)
-                def setter(new, _blk=blk):
-                    _blk["content"] = new
+                def setter(new, _blk=blk, raw=raw):
+                    if isinstance(raw, list):
+                        # Find cache_control on the first text block (if any)
+                        cc = None
+                        for b in raw:
+                            if isinstance(b, dict) and b.get("type") == "text":
+                                cc = b.get("cache_control")
+                                break
+                        # Build new text block, preserving cache_control if present
+                        text_blk = {"type": "text", "text": new}
+                        if cc is not None:
+                            text_blk["cache_control"] = cc
+                        # Keep all non-text blocks; replace all text blocks with one
+                        non_text = [b for b in raw
+                                    if not (isinstance(b, dict) and b.get("type") == "text")]
+                        _blk["content"] = [text_blk] + non_text
+                    else:
+                        _blk["content"] = new
                 refs.append(ToolResultRef(tid, text, setter))
         return refs
 

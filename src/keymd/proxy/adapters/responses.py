@@ -79,7 +79,12 @@ class ResponsesAdapter:
         out = {}
         for it in body.get("input", []) or []:
             if it.get("type") == "function_call":
-                out[it.get("call_id") or it.get("id", "")] = it.get("name", "")
+                tid = it.get("call_id") or it.get("id", "")
+                name = it.get("name", "")
+                if tid in out and out[tid] != name:
+                    out[tid] = ""   # collision: un-routable
+                else:
+                    out[tid] = name
         return out
 
     def iter_tool_results(self, body):

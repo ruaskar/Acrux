@@ -29,3 +29,39 @@ def test_handles_string_system():
             "messages": []}
     inject_cache(body, "anthropic")             # must not raise
     assert body["tools"][-1].get("cache_control") == {"type": "ephemeral"}
+
+
+# ---------------------------------------------------------------------------
+# Bug B — _already_cached must not crash on non-serializable values
+# ---------------------------------------------------------------------------
+
+def test_non_serializable_body_does_not_raise():
+    """Bug B: body with a non-JSON-serializable value must not raise."""
+    body = {
+        "system": [{"type": "text", "text": "you are..."}],
+        "tools": [{"name": "Read"}],
+        "messages": [],
+        "_handle": object(),   # non-serializable — crashes json.dumps
+    }
+    # Must not raise TypeError; must inject breakpoints (no cache_control present)
+    result = inject_cache(body, "anthropic")
+    assert result["system"][-1].get("cache_control") == {"type": "ephemeral"}
+    assert result["tools"][-1].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_cache_control_in_messages_detected_no_injection():
+    """Bug B: cache_control nested inside messages must be detected → no injection."""
+    body = {
+        "system": [{"type": "text", "text": "you are..."}],
+        "tools": [{"name": "Read"}],
+        "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": "hi",
+                 "cache_control": {"type": "ephemeral"}}
+            ]}
+        ],
+    }
+    before_sys = [dict(b) for b in body["system"]]
+    inject_cache(body, "anthropic")
+    # system block must be UNTOUCHED (framework already has cache_control)
+    assert body["system"] == before_sys

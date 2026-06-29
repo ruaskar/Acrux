@@ -6,13 +6,33 @@ prefix, so there is nothing to inject. Pure mutation of the inbound body.
 """
 from __future__ import annotations
 
-import json
-
 _EPHEMERAL = {"type": "ephemeral"}
 
 
+def _has_cache_control(obj) -> bool:
+    """Structural scan for any dict containing 'cache_control'. Never raises."""
+    if isinstance(obj, dict):
+        if "cache_control" in obj:
+            return True
+        for v in obj.values():
+            if _has_cache_control(v):
+                return True
+    elif isinstance(obj, list):
+        for item in obj:
+            if _has_cache_control(item):
+                return True
+    return False
+
+
 def _already_cached(body: dict) -> bool:
-    return "cache_control" in json.dumps(body)
+    # Scan only the fields that can carry cache_control; never serialize the body.
+    for field in ("system", "tools", "messages"):
+        try:
+            if _has_cache_control(body.get(field)):
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def inject_cache(body: dict, wire: str) -> dict:
