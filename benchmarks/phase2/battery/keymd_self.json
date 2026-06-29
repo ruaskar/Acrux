@@ -42,7 +42,7 @@
       "src/keymd/proxy/gate.py",
       "src/keymd/proxy/tools.py"
     ],
-    "key": "Production call sites of engine.summary(): gate.py (summary_result), tools.py (answer / keymd_read virtual tool), and graph_server.py (summary_route, GET /api/summary). The call-graph called_by field surfaces all three even when a file is not in the read set. (Naming graph_server.py is correct, not a fabrication.)",
+    "key": "Production call sites of engine.summary(): gate.py (summary_result), tools.py (answer / keymd_read virtual tool), and graph_server.py (summary_route, GET /api/summary). The call-graph called_by field surfaces all three even when a file is not in the read set.",
     "test_sh": null
   },
   {

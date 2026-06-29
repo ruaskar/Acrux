@@ -172,15 +172,19 @@ reporting results (see Honesty Rules below).
 ### Step 4 — De-randomize and write the verdict file
 
 Map the judge's A/B verdicts back to arms using the recorded `A_arm`/`B_arm`
-labels:
+labels (Step 3 recorded which arm each label refers to):
 
 ```python
+# Step 3 recorded: A_arm, B_arm  (each is "control" or "treatment")
+arm_of = {"A": A_arm, "B": B_arm}                      # label -> arm name
+by_arm = {arm_of[L]: judge[L]["correct"] for L in ("A", "B")}
 verdict = {
     "id": record["id"],
-    "control":   judge[A_arm_label]["correct"],   # whichever label was "control"
-    "treatment": judge[B_arm_label]["correct"],
-    "rationale": f"A={judge['A']['rationale']} B={judge['B']['rationale']}"
+    "control":   by_arm["control"],
+    "treatment": by_arm["treatment"],
+    "rationale": f"A={judge['A']['rationale']} | B={judge['B']['rationale']}",
 }
+# write verdict to benchmarks/phase2/run_log/<id>.json
 ```
 
 Write to `benchmarks/phase2/run_log/<id>.json`:
@@ -309,7 +313,16 @@ These rules are non-negotiable.  Violating them invalidates the comparison.
 
 6. **No post-hoc verdict editing.**  Once a verdict JSON is written, it is
    immutable for that run.  Re-running a question requires deleting the existing
-   file and re-running the full S1/S2 loop from Step 1.
+   file and re-running the full S1/S2 loop from Step 1.  _Distinction:_ editing
+   a verdict file after seeing it is forbidden (results tampering).  Fixing a
+   verified-stale ground-truth key in the battery is different and is allowed,
+   but only when: (a) the correction is objectively verifiable against source
+   (e.g. `grep`/`Read` confirms it), (b) it is done before scaled results are
+   recorded (e.g. during the dry-run), (c) it is logged, and (d) the affected
+   question is re-judged from Step 1 — the verdict is not hand-patched.
+   Precedent: the T4 dry-run found the inherited key listed 2 call sites of
+   `engine.summary()`; grep confirmed 3 (including `graph_server.py:76`); the
+   key was corrected and T4 was re-judged from Step 1.
 
 ---
 
