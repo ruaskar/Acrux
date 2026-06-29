@@ -1,0 +1,11 @@
+{
+  "id": "T4",
+  "control": false,
+  "treatment": true,
+  "rationale": "Re-judged against grep-verified 3-site key. Treatment (keymd summary) named all 3 production callers incl graph_server.py via the called_by call-graph; control (full source of 3 files only) missed graph_server.py (not in its read set). Dry-run CAUGHT a stale ground-truth key (was 2 sites, really 3) before scale-up.",
+  "label_map": {
+    "A": "treatment",
+    "B": "control"
+  },
+  "note": "N=1 dry-run, proves the S1 pipe end-to-end; not a degradation claim."
+}
