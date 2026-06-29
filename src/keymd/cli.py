@@ -70,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="don't auto-refresh the index on file edits")
     sv.add_argument("--bound-results", action="store_true",
                     help="bound oversized grep/ls/find tool-results inbound")
+    sv.add_argument("--inject-cache", action="store_true",
+                    help="add prompt-cache breakpoints where the framework didn't (Anthropic-wire)")
     gph = sp.add_parser("graph")
     gph.add_argument("path", nargs="?", help="repo/folder to graph (default: current dir)")
     gph.add_argument("--host", default="127.0.0.1")
@@ -179,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"keymd proxy on http://{a.host}:{a.port} "
               f"(threshold={a.threshold} loc)")
         server.serve(host=a.host, port=a.port, threshold=a.threshold,
-                     watch=not a.no_watch, bound=a.bound_results)
+                     watch=not a.no_watch, bound=a.bound_results,
+                     inject_cache=a.inject_cache)
     elif a.cmd == "graph":
         from keymd.engine import config        # `index` is already imported at module level;
         from keymd.proxy import graph_server   # re-importing it here would shadow it function-wide

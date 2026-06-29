@@ -8,7 +8,7 @@ MAX_INNER_TURNS, on exhaustion of which a synthetic terminal turn is returned
 """
 from __future__ import annotations
 
-from keymd.proxy import bounders, engine as _eng, gate, result_bound, tools
+from keymd.proxy import bounders, cache_inject, engine as _eng, gate, result_bound, tools
 from keymd.proxy.adapters.base import WireAdapter
 
 MAX_INNER_TURNS = 24
@@ -23,7 +23,8 @@ def _bound_rules() -> dict:
 
 
 async def complete(body: dict, adapter: WireAdapter, upstream, *,
-                   threshold: int = 50, bound: bool = False) -> dict:
+                   threshold: int = 50, bound: bool = False,
+                   cache: bool = False, wire: str = "anthropic") -> dict:
     # No index → keymd can't summarize anything: every read would pass through and
     # the virtual tools would all answer "(index not built)". Skip injection AND the
     # gate loop entirely so keymd is a true transparent pass-through — it adds zero
@@ -34,6 +35,8 @@ async def complete(body: dict, adapter: WireAdapter, upstream, *,
     body = adapter.inject(body)
     if bound:
         result_bound.bound_results(body, adapter, _bound_rules(), fresh_results=0)
+    if cache:
+        cache_inject.inject_cache(body, wire)   # after bounding → frozen prefix = cache anchor
     last = None
     for _ in range(MAX_INNER_TURNS):
         resp = await upstream(body)
