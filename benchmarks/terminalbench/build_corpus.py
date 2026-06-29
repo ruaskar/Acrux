@@ -67,6 +67,11 @@ def parse_solve_sh(text: str) -> list[dict]:
       {"tool": "grep", "args": "-rn 'TODO' src/"}
       {"tool": "ls",   "args": "-R data/"}
     Non-read commands (python, rm, echo, …) are silently ignored.
+
+    Conservative-floor undercounts (acceptable — these MISS reads, never
+    misclassify a non-read as a read, so they only understate savings):
+      * a '#' inside a path is read as a comment and truncates the path;
+      * a read after '&&' in a chained line (cd x && cat y) is not matched.
     """
     results = []
     for line in text.splitlines():
