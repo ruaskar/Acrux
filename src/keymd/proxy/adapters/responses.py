@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from keymd.proxy import tools
-from keymd.proxy.adapters.base import ToolCall
+from keymd.proxy.adapters.base import ToolCall, ToolResultRef
 
 _MARKER = "[keymd]"
 
@@ -74,6 +74,25 @@ class ResponsesAdapter:
             inp.append({"type": "function_call_output", "call_id": call_id,
                         "output": text})
         return body
+
+    def tool_call_names(self, body):
+        out = {}
+        for it in body.get("input", []) or []:
+            if it.get("type") == "function_call":
+                out[it.get("call_id") or it.get("id", "")] = it.get("name", "")
+        return out
+
+    def iter_tool_results(self, body):
+        refs = []
+        for it in body.get("input", []) or []:
+            if it.get("type") == "function_call_output":
+                tid = it.get("call_id", "")
+                text = it.get("output")
+                text = text if isinstance(text, str) else ""
+                def setter(new, _it=it):
+                    _it["output"] = new
+                refs.append(ToolResultRef(tid, text, setter))
+        return refs
 
     def terminal(self, text: str, template: dict | None = None) -> dict:
         out = {"object": "response", "status": "completed",

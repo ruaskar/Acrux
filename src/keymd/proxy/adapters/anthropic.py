@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 from keymd.proxy import tools
-from keymd.proxy.adapters.base import ToolCall
+from keymd.proxy.adapters.base import ToolCall, ToolResultRef
 
 _MARKER = "[keymd]"  # presence in system text => directive already injected
+
+
+def _flatten_text(blocks):
+    if not isinstance(blocks, list):
+        return ""
+    return "".join(b.get("text", "") for b in blocks
+                   if isinstance(b, dict) and b.get("type") == "text")
 
 
 class AnthropicAdapter:
@@ -48,6 +55,36 @@ class AnthropicAdapter:
             "content": [{"type": "tool_result", "tool_use_id": tid, "content": txt}
                         for tid, txt in results]})
         return body
+
+    def tool_call_names(self, body):
+        out = {}
+        for m in body.get("messages", []) or []:
+            if m.get("role") != "assistant":
+                continue
+            for b in m.get("content", []) or []:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    out[b.get("id", "")] = b.get("name", "")
+        return out
+
+    def iter_tool_results(self, body):
+        refs = []
+        for m in body.get("messages", []) or []:
+            if m.get("role") != "user":
+                continue
+            content = m.get("content")
+            if not isinstance(content, list):
+                continue
+            for blk in content:
+                if not (isinstance(blk, dict) and blk.get("type") == "tool_result"):
+                    continue
+                tid = blk.get("tool_use_id", "")
+                raw = blk.get("content")
+                # content may be a str or a list of {"type":"text","text":...} blocks
+                text = raw if isinstance(raw, str) else _flatten_text(raw)
+                def setter(new, _blk=blk):
+                    _blk["content"] = new
+                refs.append(ToolResultRef(tid, text, setter))
+        return refs
 
     def terminal(self, text: str, template: dict | None = None) -> dict:
         out = {"role": "assistant", "stop_reason": "end_turn",

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from keymd.proxy import tools
-from keymd.proxy.adapters.base import ToolCall
+from keymd.proxy.adapters.base import ToolCall, ToolResultRef
 
 _MARKER = "[keymd]"
 
@@ -64,6 +64,27 @@ class OpenAIAdapter:
         for tid, txt in results:
             msgs.append({"role": "tool", "tool_call_id": tid, "content": txt})
         return body
+
+    def tool_call_names(self, body):
+        out = {}
+        for m in body.get("messages", []) or []:
+            if m.get("role") != "assistant":
+                continue
+            for tc in m.get("tool_calls") or []:
+                out[tc.get("id", "")] = (tc.get("function", {}) or {}).get("name", "")
+        return out
+
+    def iter_tool_results(self, body):
+        refs = []
+        for m in body.get("messages", []) or []:
+            if m.get("role") == "tool":
+                tid = m.get("tool_call_id", "")
+                text = m.get("content")
+                text = text if isinstance(text, str) else ""
+                def setter(new, _m=m):
+                    _m["content"] = new
+                refs.append(ToolResultRef(tid, text, setter))
+        return refs
 
     def terminal(self, text: str, template: dict | None = None) -> dict:
         out = {"choices": [{"index": 0, "finish_reason": "stop",
