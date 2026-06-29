@@ -18,6 +18,7 @@ def test_growing_history_cache_helps(monkeypatch):
     monkeypatch.setattr(eng, "centrality_map", lambda: {})
     rep = replay_engine.replay(load_trajectory(str(FIX / "growing_history.json")))
     assert rep["counters"]["n_turns"] >= 3
+    assert rep["reductions"]["gate_bound"] > 10  # growing tail re-billed per turn → real cut
 
 
 def test_transforms_call_shipped_modules():
