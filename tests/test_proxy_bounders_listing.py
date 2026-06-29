@@ -19,3 +19,49 @@ def test_central_files_ranked_first():
 
 def test_non_listing_returns_none():
     assert bound_listing("error: command failed\nstack trace here", centrality={}) is None
+
+
+# ── BUG I2: spaced paths preserved + count honest ────────────────────────────
+
+def test_i2_spaced_filename_preserved():
+    """'my file.py' must not be filtered out by _PATHISH."""
+    text = "src/my file.py\nsrc/normal.py"
+    out = bound_listing(text)
+    assert out is not None, "Result with spaced filenames should be bounded, not None"
+    assert "my file.py" in out
+
+
+def test_i2_count_includes_spaced_paths():
+    """Header must report 2 paths (not 1) when one has a space."""
+    text = "src/my file.py\nsrc/normal.py"
+    out = bound_listing(text)
+    assert out is not None
+    assert "listing: 2 paths" in out
+
+
+def test_i2_ls_la_line_still_none():
+    """An ls -la line must still return None (not mistaken for a path listing)."""
+    ls_la = (
+        "total 80\n"
+        "-rw-r--r-- 1 user group 1234 Jun 29 10:00 file.py\n"
+        "drwxr-xr-x 2 user group 4096 Jun 29 09:00 src\n"
+    )
+    assert bound_listing(ls_la) is None, "ls -la output should not be treated as a path listing"
+
+
+def test_i2_error_text_still_none():
+    """'error: command failed' must still return None."""
+    assert bound_listing("error: command failed\nstack trace here") is None
+
+
+# ── BUG M1: backslash dir grouping mixed separators ─────────────────────────
+
+def test_m1_no_mixed_separator_in_dir_header():
+    """Backslash path group header must not contain mixed '\\/' separators."""
+    text = "src\\sub\\baz.py\nsrc\\sub\\qux.py"
+    out = bound_listing(text)
+    assert out is not None
+    # The dir header must use only forward slashes — no "src\sub/" pattern
+    for line in out.splitlines():
+        if "/" in line and "\\" in line:
+            assert False, f"Mixed separators in output line: {line!r}"

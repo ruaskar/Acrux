@@ -27,3 +27,43 @@ def test_non_grep_text_returns_none():
 def test_below_majority_parse_returns_none():
     mixed = "\n".join(["a.py:1:hit"] + ["random line"] * 10)
     assert bound_grep(mixed) is None     # <50% parse → not grep output
+
+
+# ── BUG C1: Windows drive paths ─────────────────────────────────────────────
+
+def test_c1_windows_backslash_path_parses():
+    r"""C:\src\foo.py:10:hit must parse (path=C:\src\foo.py, line=10)."""
+    out = bound_grep(r"C:\src\foo.py:10:hit")
+    assert out is not None, "Windows backslash drive path should be bounded, not None"
+    assert r"C:\src\foo.py" in out
+
+
+def test_c1_windows_forward_slash_path_parses():
+    """C:/src/foo.py:10:hit must also parse."""
+    out = bound_grep("C:/src/foo.py:10:hit")
+    assert out is not None, "Windows forward-slash drive path should be bounded, not None"
+    assert "C:/src/foo.py" in out
+
+
+def test_c1_posix_path_still_parses():
+    """Posix paths must keep working after the regex change."""
+    out = bound_grep("src/foo.py:10:hit")
+    assert out is not None
+    assert "src/foo.py" in out
+
+
+# ── BUG C2: context lines defeat majority gate ───────────────────────────────
+
+def test_c2_rg_context_lines_do_not_defeat_gate():
+    """300 match lines + 600 rg -C2 context lines → must return a bounded string, not None."""
+    lines = []
+    for n in range(1, 301):
+        lines.append(f"a.py:{n}:hit")        # match line
+        lines.append(f"a.py-{n}-ctx before") # context line (dash separator)
+        lines.append(f"a.py-{n}-ctx after")  # context line
+    text = "\n".join(lines)
+    out = bound_grep(text)
+    assert out is not None, (
+        "rg -C2 result with 300 matches + 600 context lines must be bounded, not None"
+    )
+    assert "a.py" in out

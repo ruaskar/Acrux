@@ -9,24 +9,34 @@ from __future__ import annotations
 import os
 import re
 
-_HIT = re.compile(r"^(?P<path>[^\n:]+):(?P<line>\d+):(?P<rest>.*)$")
+# BUG C1 fix: allow optional leading Windows drive letter (e.g. C:\ or C:/)
+_HIT = re.compile(r"^(?P<path>(?:[A-Za-z]:[\\/])?[^\n:]+):(?P<line>\d+):(?P<rest>.*)$")
+
+# BUG C2 fix: context lines emitted by rg -C use dash separators; count them
+# so they don't inflate the denominator and defeat the majority gate.
+_CONTEXT = re.compile(r"^(?:[A-Za-z]:[\\/])?[^\n:]+-\d+-")
 
 
 def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | None:
     lines = text.splitlines()
     parsed, files = 0, {}
     order = []
+    context_count = 0
     for ln in lines:
         m = _HIT.match(ln)
-        if not m:
-            continue
-        parsed += 1
-        p = m.group("path")
-        if p not in files:
-            files[p] = []
-            order.append(p)
-        files[p].append((m.group("line"), m.group("rest")))
-    if parsed == 0 or parsed < max(1, len(lines)) // 2:
+        if m:
+            parsed += 1
+            p = m.group("path")
+            if p not in files:
+                files[p] = []
+                order.append(p)
+            files[p].append((m.group("line"), m.group("rest")))
+        elif _CONTEXT.match(ln) or not ln.strip():
+            # BUG C2 fix: context/blank lines are structural — don't penalise them
+            context_count += 1
+    # Gate: only non-structural (prose) lines count against us
+    non_structural = len(lines) - context_count
+    if parsed == 0 or parsed < max(1, non_structural) // 2:
         return None                       # not majority grep-shaped → leave alone
 
     total = sum(len(v) for v in files.values())
@@ -46,14 +56,18 @@ def bound_grep(text: str, *, per_file: int = 8, max_files: int = 40) -> str | No
     return "\n".join(out)
 
 
-_PATHISH = re.compile(r"^[\w./\\-]+$")
+# BUG I2 fix: allow spaces so filenames like "my file.py" are not filtered out.
+# Guard: must also contain a path indicator (slash or dot) so bare prose words
+# ("stack trace here") and ls-style permission strings don't qualify.
+_PATHISH = re.compile(r"^[\w ./\\-]+$")
+_PATH_INDICATOR = re.compile(r"[./\\]")
 
 
 def bound_listing(text: str, centrality: dict[str, int] | None = None, *,
                   max_entries: int = 60) -> str | None:
     centrality = centrality or {}
     raw = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    paths = [p for p in raw if _PATHISH.match(p)]
+    paths = [p for p in raw if _PATHISH.match(p) and _PATH_INDICATOR.search(p)]
     if not paths or len(paths) < max(1, len(raw)) // 2:
         return None                       # not majority path-shaped → leave alone
 
@@ -62,7 +76,10 @@ def bound_listing(text: str, centrality: dict[str, int] | None = None, *,
     shown = ranked[:max_entries]
     by_dir: dict[str, list[str]] = {}
     for p in shown:
-        by_dir.setdefault(os.path.dirname(p) or ".", []).append(p)
+        # BUG M1 fix: normalise dir key to forward slashes for consistent display
+        raw_dir = os.path.dirname(p) or "."
+        d_key = raw_dir.replace("\\", "/")
+        by_dir.setdefault(d_key, []).append(p)
 
     out = [f"listing: {len(paths)} paths, {len(by_dir)} dirs (most-central first)"]
     for d, members in by_dir.items():
